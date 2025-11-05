@@ -1,0 +1,560 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+
+:root {
+    --primary-color: #0d6efd;
+    --success-color: #198754;
+    --danger-color: #dc3545;
+    --light-gray: #f8f9fa;
+    --border-radius: 0.75rem; /* 圓角加大 */
+    --body-bg: #f4f7f6;
+    --card-bg: #ffffff;
+    --muted-text: #6c757d;
+    --table-header-bg: #e9ecef;
+    --table-text-color: #212529;
+    --table-border-color: #dee2e6;
+}
+
+[data-theme="dark"] {
+    --body-bg: #121212;
+    --card-bg: #1e1e1e;
+    --muted-text: #adb5bd;
+    --table-header-bg: #2d2d2d;
+    --text-color: #ffffff;
+    --table-text-color: #e0e0e0;
+    --table-border-color: #444444;
+}
+body {
+    font-family: 'Noto Sans TC', sans-serif;
+    background-color: var(--body-bg);
+    background-image: linear-gradient(180deg, var(--body-bg) 0%, var(--body-bg) 100%);
+    color: var(--text-color, #212529);
+}
+
+.card {
+    background-color: var(--card-bg);
+}
+
+[data-theme="dark"] .card {
+    background-color: var(--card-bg);
+    color: #ffffff;
+}
+
+/* --- 卡片美化 --- */
+.card {
+    border: none; /* 移除邊框 */
+    border-radius: var(--border-radius);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); /* 陰影更柔和 */
+    transition: transform 0.3s ease, box-shadow 0.3s ease; /* 加入轉場動畫 */
+}
+
+.card:hover {
+    transform: translateY(-5px); /* 滑鼠移上時輕微浮起 */
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+}
+
+/* --- 即時脈搏動畫 --- */
+.pulsing-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    background-color: var(--success-color);
+    border-radius: 50%;
+    animation: pulse 1.5s infinite;
+    box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.7);
+}
+
+[data-theme="dark"] .pulsing-dot {
+    box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.4);
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.7);
+    }
+    70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 10px rgba(25, 135, 84, 0);
+    }
+    100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(25, 135, 84, 0);
+    }
+}
+
+
+/* *** (新) 試算功能 *** */
+.trial-input {
+    width: 100px;
+    margin-bottom: 5px;
+}
+
+.trial-result {
+    font-size: 0.85em;
+    line-height: 1.4;
+    min-width: 150px; /* (確保結果有足夠寬度) */
+}
+
+/* (您原有的 CSS... 保持不變) */
+.sortable-header {
+  /* ... */
+}
+/* ... */
+/* 讓數字字體稍微不同 */
+.price-cell, .table td:nth-child(5), .table td:nth-child(6), .table td:nth-child(7) {
+    font-family: 'Menlo', 'Consolas', 'Courier New', monospace;
+    font-weight: 500;
+}
+
+/* --- 表格列寬度優化 --- */
+#portfolio-table th[data-sort-key="ticker"],
+#portfolio-table td[data-key="ticker"] {
+    width: 8%;
+}
+
+#portfolio-table th[data-sort-key="name"],
+#portfolio-table td[data-key="name"] {
+    width: 15%;
+}
+
+#portfolio-table th[data-sort-key="shares"],
+#portfolio-table td[data-key="shares"],
+#portfolio-table th[data-sort-key="avg_cost"],
+#portfolio-table td[data-key="avg_cost"],
+#portfolio-table th[data-sort-key="current_price"],
+#portfolio-table td[data-key="current_price"],
+#portfolio-table th[data-sort-key="previous_close"],
+#portfolio-table td[data-key="previous_close"] {
+    width: 7%;
+}
+
+#portfolio-table th[data-sort-key="market_value"],
+#portfolio-table td[data-key="market_value"] {
+    width: 10%;
+}
+
+#portfolio-table th[data-sort-key="change_percent"],
+#portfolio-table td[data-key="change_percent"],
+#portfolio-table th[data-sort-key="today_pl"],
+#portfolio-table td[data-key="today_pl"],
+#portfolio-table th[data-sort-key="pl"],
+#portfolio-table td[data-key="pl"],
+#portfolio-table th[data-sort-key="pl_percent"],
+#portfolio-table td[data-key="pl_percent"] {
+    width: 8%;
+}
+
+#portfolio-table th[data-key="what_if"],
+#portfolio-table td[data-key="what_if"] {
+    width: 12%;
+}
+
+#portfolio-table th[data-key="chart"],
+#portfolio-table td[data-key="chart"] {
+    width: 8%;
+}
+
+#portfolio-table th[data-key="actions"],
+#portfolio-table td[data-key="actions"] {
+    width: 8%;
+}
+
+/* --- 貨幣標籤優化 --- */
+.currency-badge {
+    font-size: 0.65em;
+    padding: 0.3em 0.5em;
+    font-weight: 500;
+}
+
+.badge.bg-secondary {
+    background-color: #6c757d !important;
+}
+
+
+.currency-badge[data-currency="CNY"] {
+    background-color: #dc3545 !important;
+    color: #ffffff !important;
+}
+
+.currency-badge[data-currency="USD"] {
+    background-color: #ffc107 !important;
+    color: #212529 !important;
+}
+
+[data-theme="dark"] .currency-badge[data-currency="CNY"] {
+    background-color: #dc3545 !important;
+    color: #ffffff !important;
+}
+
+[data-theme="dark"] .currency-badge[data-currency="USD"] {
+    background-color: #ffc107 !important;
+    color: #212529 !important;
+}
+
+/* --- 表格響應式優化 --- */
+.table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* 價格上漲動畫 (台股紅) */
+.flash-up {
+    animation: flash-red 1s ease-out;
+}
+
+/* 價格下跌動畫 (台股綠) */
+.flash-down {
+    animation: flash-green 1s ease-out;
+}
+
+@keyframes flash-red {
+    0% { background-color: transparent; }
+    50% { background-color: rgba(220, 53, 69, 0.3); } /* Bootstrap danger 淺色 */
+    100% { background-color: transparent; }
+}
+
+@keyframes flash-green {
+    0% { background-color: transparent; }
+    50% { background-color: rgba(25, 135, 84, 0.3); } /* Bootstrap success 淺色 */
+    100% { background-color: transparent; }
+}
+
+/* 台股的損益顏色 (紅漲綠跌) */
+/* 使用 !important 來覆蓋 Bootstrap 預設的 .text-danger (通常是紅色) */
+/* 在這個專案中，我們定義 .text-danger (正數) 為紅色 */
+.text-danger {
+    color: var(--danger-color) !important;
+}
+
+/* .text-success (負數) 為綠色 */
+.text-success {
+    color: var(--success-color) !important;
+}
+
+.text-dark {
+    color: #212529 !important;
+}
+
+[data-theme="dark"] .text-muted {
+    color: #adb5bd !important;
+}
+
+
+/* 總覽卡片的字體 */
+.card-body h3 {
+    font-weight: 600;
+}
+
+/* --- 表格美化 --- */
+.table {
+    color: var(--table-text-color);
+    background-color: var(--card-bg); /* 確保表格背景與卡片一致 */
+}
+
+.table-hover > tbody > tr:hover > * {
+    background-color: #e9ecef; /* 滑鼠移上時的背景色 */
+}
+
+[data-theme="dark"] .table-hover > tbody > tr:hover > * {
+    background-color: #2d2d2d; /* 深色主題下滑鼠移上時的背景色 */
+}
+
+.table-light {
+    --bs-table-bg: var(--table-header-bg);
+    --bs-table-color: var(--table-text-color);
+}
+
+[data-theme="dark"] .table {
+    --bs-table-color: var(--table-text-color);
+    --bs-table-border-color: var(--table-border-color);
+    background-color: var(--card-bg); /* 深色模式下表格背景與卡片一致 */
+}
+
+/* 深色模式下表格主體的背景色 */
+[data-theme="dark"] .table > :not(caption) > * > * {
+    background-color: var(--card-bg);
+}
+
+/* 深色模式下表格標頭的背景色 */
+[data-theme="dark"] .table-light {
+    --bs-table-bg: var(--table-header-bg);
+    --bs-table-color: var(--table-text-color);
+}
+
+/* 深色模式下表格主體行的背景色 */
+[data-theme="dark"] .table > tbody > tr {
+    --bs-table-bg: var(--card-bg);
+}
+
+/* 深色模式下表格的邊框顏色 */
+[data-theme="dark"] .table > :not(caption) > * > * {
+    border-color: var(--table-border-color);
+}
+
+/* --- 表格列淡入動畫 --- */
+.fade-in-row {
+    animation: fadeInRow 0.5s ease-in-out;
+}
+
+@keyframes fadeInRow {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- 按鈕美化 --- */
+.btn-primary, .btn-outline-secondary {
+    transition: all 0.2s ease; /* 加入轉場 */
+    border-radius: var(--border-radius); /* 使用一致的圓角 */
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.btn-primary:hover {
+    background-color: #0b5ed7; /* 稍深一點的藍色 */
+    border-color: #0a58ca;
+    transform: scale(1.02); /* 滑鼠移上時稍微放大 */
+}
+
+.btn-outline-secondary {
+    border-color: #6c757d;
+    color: #6c757d;
+}
+
+.btn-outline-secondary:hover {
+    background-color: #6c757d;
+    color: white;
+    transform: scale(1.02); /* 滑鼠移上時稍微放大 */
+}
+
+[data-theme="dark"] .btn-outline-secondary {
+    border-color: #adb5bd;
+    color: #adb5bd;
+}
+
+[data-theme="dark"] .btn-outline-secondary:hover {
+    background-color: #adb5bd;
+    color: #121212;
+}
+
+/* Column Toggler Styles */
+#column-toggle-dropdown {
+    min-width: 200px;
+    padding: 10px;
+}
+
+#column-toggle-dropdown .form-check {
+    margin-bottom: 5px;
+}
+
+/* --- 空狀態設計 --- */
+.empty-state-container {
+    padding: 2rem;
+}
+
+.empty-state-container h4 {
+    color: #212529;
+}
+
+.empty-state-container p {
+    color: var(--muted-text);
+}
+
+[data-theme="dark"] .empty-state-container h4 {
+    color: #ffffff;
+}
+
+[data-theme="dark"] .empty-state-container p {
+    color: #adb5bd;
+}
+
+/* --- 個股圖表樣式 --- */
+.stock-chart-row .card-body {
+    padding: 1rem;
+}
+
+.stock-chart-row canvas {
+    max-height: 200px;
+    width: 100% !important;
+    height: auto !important;
+}
+
+
+/* --- 日期範圍查詢按鈕樣式 --- */
+#clear-date-range {
+    transition: all 0.2s ease;
+    border-radius: var(--border-radius);
+}
+
+#clear-date-range:hover {
+    transform: scale(1.02);
+}
+
+/* --- 設定模態框樣式 --- */
+#settings-modal .modal-content {
+    border-radius: var(--border-radius);
+}
+
+#settings-modal .form-check {
+    margin-bottom: 0.5rem;
+}
+
+#settings-modal .form-text {
+    font-size: 0.875em;
+}
+
+[data-theme="dark"] .modal-content {
+    background-color: #1e1e1e;
+    color: #ffffff;
+}
+
+[data-theme="dark"] .modal-header,
+[data-theme="dark"] .modal-footer {
+    border-color: #333333;
+}
+
+[data-theme="dark"] .form-control,
+[data-theme="dark"] .form-select {
+    background-color: #2d2d2d;
+    color: #ffffff;
+    border-color: #444444;
+}
+
+/* Dynamically generated styles for hiding columns */
+
+/* --- 閃爍通知效果 --- */
+.flash-alert {
+    animation: flash-alert 1s ease-out;
+}
+
+@keyframes flash-alert {
+    0% { background-color: transparent; }
+    50% { background-color: rgba(255, 193, 7, 0.5); } /* Bootstrap warning 淺色 */
+    100% { background-color: transparent; }
+}
+
+/* --- 總報酬率閃爍效果 --- */
+#total-pl-percent.flash-threshold-exceeded {
+    animation: flash-threshold 1s infinite;
+}
+
+[data-theme="dark"] #total-pl-percent.flash-threshold-exceeded {
+    animation: flash-threshold-dark 1s infinite;
+}
+
+/* --- 總損益閃爍效果 --- */
+#total-pl.flash-threshold-exceeded {
+    animation: flash-threshold 1s infinite;
+}
+
+[data-theme="dark"] #total-pl.flash-threshold-exceeded {
+    animation: flash-threshold-dark 1s infinite;
+}
+
+/* --- 總市值閃爍效果 --- */
+#total-market-value.flash-threshold-exceeded {
+    animation: flash-threshold 1s infinite;
+}
+
+[data-theme="dark"] #total-market-value.flash-threshold-exceeded {
+    animation: flash-threshold-dark 1s infinite;
+}
+
+/* --- 台灣股票總市值閃爍效果 --- */
+#tw-market-value.flash-threshold-exceeded {
+    animation: flash-threshold 1s infinite;
+}
+
+[data-theme="dark"] #tw-market-value.flash-threshold-exceeded {
+    animation: flash-threshold-dark 1s infinite;
+}
+
+/* --- 中國股票總市值閃爍效果 --- */
+#cn-market-value.flash-threshold-exceeded {
+    animation: flash-threshold 1s infinite;
+}
+
+[data-theme="dark"] #cn-market-value.flash-threshold-exceeded {
+    animation: flash-threshold-dark 1s infinite;
+}
+
+@keyframes flash-threshold {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+/* --- Header 控制按鈕佈局優化 --- */
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    position: absolute;
+    right: 0;
+    top: 0.6rem;
+}
+
+.header-controls .spinner-border {
+    width: 1.5rem;
+    height: 1.5rem;
+    margin: 0;
+}
+
+@keyframes flash-threshold-dark {
+    0% { opacity: 1; }
+    50% { opacity: 0.3; }
+    100% { opacity: 1; }
+}
+
+/* --- 重試狀態顯示樣式 --- */
+.retry-status-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 0.375rem;
+    padding: 0.25rem 0.75rem;
+    font-size: 0.875rem;
+}
+
+[data-theme="dark"] .retry-status-container {
+    background-color: #333333;
+    border-color: #555555;
+    color: #ffffff;
+}
+
+.retry-progress {
+    width: 100px;
+    height: 8px;
+    background-color: #e9ecef;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+[data-theme="dark"] .retry-progress {
+    background-color: #444444;
+}
+
+.retry-progress-bar {
+    height: 100%;
+    background-color: #0d6efd;
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+[data-theme="dark"] .retry-progress-bar {
+    background-color: #3a86ff;
+}
+
+.retry-text {
+    font-weight: 500;
+}
+
+.retry-count {
+    font-weight: 700;
+    min-width: 2rem;
+    text-align: center;
+}
