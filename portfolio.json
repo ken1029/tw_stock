@@ -1,9 +1,44 @@
 [
   {
     "ticker": "0050.TW",
-    "shares": 10000.0,
+    "shares": 30000.0,
     "avg_cost": 61.79,
     "currency": "TWD",
     "name": "元大台灣50"
+  },
+  {
+    "ticker": "00646.TW",
+    "shares": 20000,
+    "avg_cost": 64.15,
+    "currency": "TWD",
+    "name": "元大S&P500"
+  },
+  {
+    "ticker": "00679B.TWO",
+    "shares": 60000,
+    "avg_cost": 32.01,
+    "currency": "TWD",
+    "name": "元大美債20年"
+  },
+  {
+    "ticker": "00850.TW",
+    "shares": 19000,
+    "avg_cost": 52.66,
+    "currency": "TWD",
+    "name": "元大臺灣ESG"
+  },
+  {
+    "ticker": "2317.TW",
+    "shares": 20000,
+    "avg_cost": 79.67,
+    "currency": "TWD",
+    "name": "鴻海"
+  },
+  {
+    "ticker": "601138.SS",
+    "shares": 41790,
+    "avg_cost": 10.816,
+    "currency": "CNY",
+    "name": "工業富聯"
   }
 ]

@@ -854,34 +854,41 @@ function updateRowContent(row, stock, oldStockData) {
     updateCell(row, 'today_pl', currencyFormatter.format(stock.today_pl), [todayPlClass, todayPlFlashClass]);
     updateCell(row, 'pl', currencyFormatter.format(stock.pl), [totalPlClass]);
     updateCell(row, 'pl_percent', percentFormatter.format(stock.pl_percent / 100), [totalPlClass]);
-
-    // --- 清除動畫class ---
-    if (priceChangeClass || todayPlFlashClass || marketValueFlashClass) {
-        setTimeout(() => {
-            row.querySelector('.price-cell')?.classList.remove('flash-up', 'flash-down');
-            row.querySelector('.today-pl-cell')?.classList.remove('flash-up', 'flash-down');
-            row.querySelector('.market-value-cell')?.classList.remove('flash-up', 'flash-down');
-        }, 1000);
-    }
 }
 
 function updateCell(row, key, newContent, classes = []) {
     const cell = row.querySelector(`td[data-key="${key}"]`);
     if (!cell) return;
 
+    // 只有在內容真正改變時才更新innerHTML
     if (cell.innerHTML !== newContent) {
         cell.innerHTML = newContent;
     }
     
-    // 管理 CSS class
+    // 分離閃爍class和其他class
+    const flashClasses = ['flash-up', 'flash-down'];
+    const otherClasses = classes.filter(c => c && !flashClasses.includes(c));
+    const flashClass = classes.find(c => flashClasses.includes(c));
+    
+    // 管理非閃爍的CSS class
     const classSet = new Set(cell.classList);
-    const toRemove = ['text-danger', 'text-success', 'text-dark', 'flash-up', 'flash-down'];
+    const toRemove = ['text-danger', 'text-success', 'text-dark'];
     toRemove.forEach(c => classSet.delete(c));
-    classes.forEach(c => { if(c) classSet.add(c) });
+    otherClasses.forEach(c => classSet.add(c));
+    
+    // 只有在需要時才添加閃爍class
+    if (flashClass) {
+        classSet.add(flashClass);
+        // 設置計時器清除閃爍class
+        setTimeout(() => {
+            cell.classList.remove('flash-up', 'flash-down');
+        }, 1000);
+    }
     
     // 避免不必要的 classList 操作
-    if (cell.className !== Array.from(classSet).join(' ')) {
-       cell.className = Array.from(classSet).join(' ');
+    const newClassName = Array.from(classSet).join(' ');
+    if (cell.className !== newClassName) {
+       cell.className = newClassName;
     }
 }
 
@@ -1079,7 +1086,7 @@ function renderHistoryChart(dailyData) {
                                 label += ': ';
                             }
                             if (context.parsed.y !== null) {
-                                label += chartCurrencyFormatter.format(context.parsed.y);
+                                label += currencyFormatter.format(context.parsed.y);
                             }
                             return label;
                         }
@@ -1345,13 +1352,13 @@ async function showHistoricalDataRange() {
         
         // 顯示結果
         const message = `查詢區間 <strong>${actualStartDateStr}</strong> 至 <strong>${actualEndDateStr}</strong> (${performanceLabel}):<br>
-                       <h4 class="mb-0">${chartCurrencyFormatter.format(startValue)} → ${chartCurrencyFormatter.format(endValue)}</h4>`;
+                       <h4 class="mb-0">${currencyFormatter.format(startValue)} → ${currencyFormatter.format(endValue)}</h4>`;
                          
         const diffHtml = `
             <hr class="my-2">
             <small class="mb-0">
                 <strong class="${plClass}" style="font-size: 1.1rem;">
-                    ${diff > 0 ? '+' : ''}${chartCurrencyFormatter.format(diff)} (${percentFormatter.format(percent)})
+                    ${diff > 0 ? '+' : ''}${currencyFormatter.format(diff)} (${percentFormatter.format(percent)})
                 </strong>
             </small>
         `;
@@ -1462,17 +1469,17 @@ async function showHistoricalData(event) {
             diffHtml = `
                 <hr class="my-2">
                 <small class="mb-0">
-                    與 ${previousDateStr} ( ${chartCurrencyFormatter.format(previousValue)} ) 相比:<br>
+                    與 ${previousDateStr} ( ${currencyFormatter.format(previousValue)} ) 相比:<br>
                     <strong class="${plClass}" style="font-size: 1.1rem;">
-                        ${diff > 0 ? '+' : ''}${chartCurrencyFormatter.format(diff)} (${percentFormatter.format(percent)})
-                    </strong>
+                       ${diff > 0 ? '+' : ''}${currencyFormatter.format(diff)} (${percentFormatter.format(percent)})
+                   </strong>
                 </small>
             `;
         } else {
             diffHtml = `<hr class="my-2"><small class="mb-0">這是資料中的第一天，無前期資料可比較。</small>`;
         }
         let message = `查詢日期 <strong>${lookupDateStr}</strong> (以 <strong>${foundDateStr}</strong> 收盤價為準) (${performanceLabel}):<br>
-                       <h4 class="mb-0">${chartCurrencyFormatter.format(foundValue)}</h4>`;
+                       <h4 class="mb-0">${currencyFormatter.format(foundValue)}</h4>`;
         lookupResultEl.innerHTML = message + diffHtml;
         lookupResultEl.className = 'alert alert-info';
         lookupResultEl.style.display = 'block';
@@ -1653,7 +1660,7 @@ function calculateAndDisplayRange() {
         // 如果是本月或近7天但找不到起始資料，顯示適當訊息
         document.getElementById('range-label').textContent = rangeLabel;
         document.getElementById('range-start-value').textContent = '(無起始資料)';
-        document.getElementById('range-end-value').textContent = `(${chartCurrencyFormatter.format(endValue)})`;
+        document.getElementById('range-end-value').textContent = `(${currencyFormatter.format(endValue)})`;
         const diffEl = document.getElementById('range-summary-diff');
         const percentEl = document.getElementById('range-summary-percent');
         diffEl.textContent = 'N/A';
@@ -1668,8 +1675,8 @@ function calculateAndDisplayRange() {
     const percent = (startValue === 0) ? 0 : (diff / startValue);
     const plClass = getPlClass(diff);
     document.getElementById('range-label').textContent = rangeLabel;
-    document.getElementById('range-start-value').textContent = `(${chartCurrencyFormatter.format(startValue)})`;
-    document.getElementById('range-end-value').textContent = `(${chartCurrencyFormatter.format(endValue)})`;
+    document.getElementById('range-start-value').textContent = `(${currencyFormatter.format(startValue)})`;
+    document.getElementById('range-end-value').textContent = `(${currencyFormatter.format(endValue)})`;
     const diffEl = document.getElementById('range-summary-diff');
     const percentEl = document.getElementById('range-summary-percent');
     diffEl.textContent = `${diff > 0 ? '+' : ''}${currencyFormatter.format(diff)}`;
@@ -1953,9 +1960,61 @@ document.addEventListener('DOMContentLoaded', () => {
     // 初始化設定
     initSettings();
     
+    // 設置除錯模式按鈕事件監聽器
+    document.getElementById('backfill-btn').addEventListener('click', handleBackfill);
+    
     startFetching();
     fetchHistorySummary();
-});
+  });
+
+// 處理歷史資料回補
+async function handleBackfill() {
+    const debugDate = document.getElementById('debug-date').value;
+    const debugResult = document.getElementById('debug-result');
+    
+    if (!debugDate) {
+        debugResult.textContent = '請選擇日期';
+        debugResult.className = 'alert alert-warning';
+        debugResult.style.display = 'block';
+        return;
+    }
+    
+    try {
+        debugResult.style.display = 'none';
+        const response = await fetchWithRetry('/api/backfill_history', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ date: debugDate })
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            debugResult.innerHTML = `歷史資料回補成功：<br>
+                日期：${data.date}<br>
+                總資產：${currencyFormatter.format(data.snapshot.total)}<br>
+                台灣股票：${currencyFormatter.format(data.snapshot.tw_value)}<br>
+                中國股票：${currencyFormatter.format(data.snapshot.cn_value)}`;
+            debugResult.className = 'alert alert-success';
+        } else if (data.status === 'skipped') {
+            debugResult.textContent = `回補跳過：${data.message}`;
+            debugResult.className = 'alert alert-warning';
+        } else {
+            debugResult.textContent = `回補失敗：${data.message}`;
+            debugResult.className = 'alert alert-danger';
+        }
+    } catch (error) {
+        console.error('Error in handleBackfill:', error);
+        debugResult.textContent = `回補失敗：${error.message}`;
+        debugResult.className = 'alert alert-danger';
+    } finally {
+        debugResult.style.display = 'block';
+        // 重新加載歷史數據以更新圖表
+        fetchHistorySummary();
+    }
+}
 
 
 // (新增) 清除日期範圍輸入
@@ -2020,6 +2079,9 @@ const defaultSettings = {
     plNotificationThreshold: 1000
 };
 
+// 除錯模式設定
+defaultSettings.debugMode = false;
+
 // 從 localStorage 載入設定
 function loadSettings() {
     const savedSettings = JSON.parse(localStorage.getItem('portfolio_settings'));
@@ -2060,6 +2122,9 @@ function applySettings(settings) {
     // 這裡可以添加更多設定應用邏輯
     // 例如圖表時間範圍、通知設定等
     
+    // 應用除錯模式設定
+    applyDebugMode(settings.debugMode);
+    
     // 應用閃爍通知設定
     const totalPlPercentElement = document.getElementById('total-pl-percent');
     if (totalPlPercentElement) {
@@ -2072,6 +2137,14 @@ function applySettings(settings) {
         const plValue = parseFloat(plValueText.replace(/[^0-9.-]/g, '')) || 0;
         
         checkAndTriggerNotification(plPercent, plValue);
+    }
+  }
+
+// 應用除錯模式設定
+function applyDebugMode(isEnabled) {
+    const debugSection = document.getElementById('debug-section');
+    if (debugSection) {
+        debugSection.style.display = isEnabled ? 'block' : 'none';
     }
 }
 
@@ -2097,31 +2170,33 @@ function openSettingsModal() {
     document.getElementById('pl-percent-notification-threshold').value = settings.plPercentNotificationThreshold;
     document.getElementById('enable-pl-notification').checked = settings.enablePlNotification;
     document.getElementById('pl-notification-threshold').value = settings.plNotificationThreshold;
+    document.getElementById('debug-mode').checked = settings.debugMode || false;
     
     settingsModal.show();
-}
+  }
 
 // 儲存設定
 function saveSettingsFromForm() {
-    const settings = {
-        updateInterval: parseInt(document.getElementById('update-interval').value),
-        chartTimeRange: parseInt(document.getElementById('chart-time-range').value),
-        showTotalSeries: document.getElementById('show-total-series').checked,
-        showTwSeries: document.getElementById('show-tw-series').checked,
-        showCnSeries: document.getElementById('show-cn-series').checked,
-        theme: document.getElementById('theme-selector').value,
-        enableNotifications: document.getElementById('enable-notifications').checked,
-        enableMarketValueNotification: document.getElementById('enable-market-value-notification').checked,
-        marketValueNotificationThreshold: parseFloat(document.getElementById('market-value-notification-threshold').value),
-        enableTwMarketValueNotification: document.getElementById('enable-tw-market-value-notification').checked,
-        twMarketValueNotificationThreshold: parseFloat(document.getElementById('tw-market-value-notification-threshold').value),
-        enableCnMarketValueNotification: document.getElementById('enable-cn-market-value-notification').checked,
-        cnMarketValueNotificationThreshold: parseFloat(document.getElementById('cn-market-value-notification-threshold').value),
-        enablePlPercentNotification: document.getElementById('enable-pl-percent-notification').checked,
-        plPercentNotificationThreshold: parseFloat(document.getElementById('pl-percent-notification-threshold').value),
-        enablePlNotification: document.getElementById('enable-pl-notification').checked,
-        plNotificationThreshold: parseFloat(document.getElementById('pl-notification-threshold').value)
-    };
+  const settings = {
+      updateInterval: parseInt(document.getElementById('update-interval').value),
+      chartTimeRange: parseInt(document.getElementById('chart-time-range').value),
+      showTotalSeries: document.getElementById('show-total-series').checked,
+      showTwSeries: document.getElementById('show-tw-series').checked,
+      showCnSeries: document.getElementById('show-cn-series').checked,
+      theme: document.getElementById('theme-selector').value,
+      enableNotifications: document.getElementById('enable-notifications').checked,
+      enableMarketValueNotification: document.getElementById('enable-market-value-notification').checked,
+      marketValueNotificationThreshold: parseFloat(document.getElementById('market-value-notification-threshold').value),
+      enableTwMarketValueNotification: document.getElementById('enable-tw-market-value-notification').checked,
+      twMarketValueNotificationThreshold: parseFloat(document.getElementById('tw-market-value-notification-threshold').value),
+      enableCnMarketValueNotification: document.getElementById('enable-cn-market-value-notification').checked,
+      cnMarketValueNotificationThreshold: parseFloat(document.getElementById('cn-market-value-notification-threshold').value),
+      enablePlPercentNotification: document.getElementById('enable-pl-percent-notification').checked,
+      plPercentNotificationThreshold: parseFloat(document.getElementById('pl-percent-notification-threshold').value),
+      enablePlNotification: document.getElementById('enable-pl-notification').checked,
+      plNotificationThreshold: parseFloat(document.getElementById('pl-notification-threshold').value),
+      debugMode: document.getElementById('debug-mode').checked
+  };
     
     saveSettings(settings);
     applySettings(settings);
@@ -2169,6 +2244,58 @@ function saveSettingsFromForm() {
         const cnMarketValueText = cnMarketValueElement.textContent;
         const cnMarketValue = parseFloat(cnMarketValueText.replace(/[^0-9.-]/g, '')) || 0;
         checkMarketValueNotification(cnMarketValue, 'cn');
+    }
+}
+
+// 在 initSettings 函數中新增除錯模式初始化
+function initSettings() {
+    const settings = loadSettings();
+    applySettings(settings);
+    applyDebugMode(settings.debugMode);
+    
+    // 應用閃爍通知設定
+    if (settings.enableNotifications) {
+        // 確保在初始化時檢查一次通知條件
+        setTimeout(() => {
+            const totalPlPercentElement = document.getElementById('total-pl-percent');
+            const totalPlElement = document.getElementById('total-pl');
+            if (totalPlPercentElement && totalPlElement) {
+                // 獲取當前的總報酬率
+                const plPercentText = totalPlPercentElement.textContent;
+                // 移除百分比符號並解析數值
+                const plPercent = parseFloat(plPercentText.replace('%', '')) || 0;
+                // 獲取當前的總損益值
+                const plValueText = totalPlElement.textContent;
+                const plValue = parseFloat(plValueText.replace(/[^0-9.-]/g, '')) || 0;
+                
+                checkAndTriggerNotification(plPercent, plValue);
+            }
+            
+            // 應用市值閃爍通知設定
+            const totalMarketValueElement = document.getElementById('total-market-value');
+            if (totalMarketValueElement) {
+                // 獲取當前的總市值
+                const marketValueText = totalMarketValueElement.textContent;
+                const marketValue = parseFloat(marketValueText.replace(/[^0-9.-]/g, '')) || 0;
+                checkMarketValueNotification(marketValue, 'total');
+            }
+            
+            const twMarketValueElement = document.getElementById('tw-market-value');
+            if (twMarketValueElement) {
+                // 獲取當前的台灣股票總市值
+                const twMarketValueText = twMarketValueElement.textContent;
+                const twMarketValue = parseFloat(twMarketValueText.replace(/[^0-9.-]/g, '')) || 0;
+                checkMarketValueNotification(twMarketValue, 'tw');
+            }
+            
+            const cnMarketValueElement = document.getElementById('cn-market-value');
+            if (cnMarketValueElement) {
+                // 獲取當前的中國股票總市值
+                const cnMarketValueText = cnMarketValueElement.textContent;
+                const cnMarketValue = parseFloat(cnMarketValueText.replace(/[^0-9.-]/g, '')) || 0;
+                checkMarketValueNotification(cnMarketValue, 'cn');
+            }
+        }, 1000);
     }
 }
 

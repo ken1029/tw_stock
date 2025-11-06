@@ -3,7 +3,8 @@ import yfinance as yf
 from flask import Flask, render_template, jsonify, request
 from datetime import datetime, date, timedelta, time
 import os
-import requests 
+import requests
+import pandas as pd
 from time import time as timestamp
 import sqlite3 # (新) 匯入 sqlite
 
@@ -86,12 +87,25 @@ def get_current_prices(tickers):
             
             # 更準確地獲取昨日收盤價
             # 使用history方法獲取最近幾天的資料以確保能獲取到正確的昨日收盤價
-            hist = ticker_obj.history(period='5d')
-            if not hist.empty and len(hist) >= 2:
-                # 取倒數第二天的收盤價作為昨日收盤價
-                prev_close = hist['Close'].iloc[-2]
-            else:
-                # 回退到原來的方法
+            hist = ticker_obj.history(period='5d') # 넉넉하게 5일치 가져오기
+
+            # 오늘 날짜 (시간 정보 제외)
+            today = datetime.now().date()
+
+            # 어제 종가 초기화
+            prev_close = None
+
+            if not hist.empty:
+                # 인덱스를 날짜 형식으로 변환
+                hist.index = hist.index.date
+                # 오늘 이전의 데이터만 필터링
+                past_data = hist[hist.index < today]
+                if not past_data.empty:
+                    # 가장 최근 날짜의 종가를 어제 종가로 사용
+                    prev_close = past_data['Close'].iloc[-1]
+
+            # 만약 위 방법으로 종가를 못찾으면 원래 방법으로 대체
+            if prev_close is None:
                 prev_close = info.get('previousClose')
                 
             if not price or not prev_close:
@@ -114,15 +128,69 @@ def get_current_prices(tickers):
             if matching_tickers:
                 stock_data[matching_tickers[0]] = {"price": 0, "previous_close": 0}
     return stock_data
+
+def get_prices_for_date(tickers, target_date):
+    """獲取指定日期範圍內的收盤價"""
+    if not tickers:
+        return {}
     
+    # yfinance 需要一個結束日期，所以我們將目標日期加一天
+    start_date = target_date
+    end_date = target_date + timedelta(days=1)
+    
+    print(f"[yfinance] Fetching historical prices for {target_date.strftime('%Y-%m-%d')} for tickers: {' '.join(tickers)}")
+    
+    hist_data = yf.download(
+        ' '.join(tickers),
+        start=start_date,
+        end=end_date,
+        interval="1d",
+        group_by='ticker'
+    )
+    
+    stock_data = {}
+    for ticker in tickers:
+        try:
+            # 處理單一股票和多股票時 hist_data 的不同結構
+            if len(tickers) == 1:
+                price_series = hist_data['Close']
+            else:
+                price_series = hist_data[ticker]['Close']
+
+            if not price_series.empty:
+                # 獲取該日期的收盤價
+                price = price_series.iloc[-1]
+                if pd.isna(price): # 處理假日或無交易日的情況
+                     # 如果當天沒有資料，嘗試往前找最近的一個交易日
+                    temp_end = target_date
+                    temp_start = temp_end - timedelta(days=7) # 最多往前找7天
+                    temp_hist = yf.download(ticker, start=temp_start, end=temp_end, interval="1d")
+                    if not temp_hist.empty:
+                        price = temp_hist['Close'].iloc[-1]
+                        print(f"  -> {ticker} on {target_date.strftime('%Y-%m-%d')} has no data, using last valid price: {price:.2f} on {temp_hist.index[-1].strftime('%Y-%m-%d')}")
+                    else:
+                        price = 0
+                        print(f"  -> Could not find any recent price for {ticker}")
+                stock_data[ticker] = {"price": price}
+            else:
+                stock_data[ticker] = {"price": 0}
+                print(f"Warning: No historical data found for {ticker} on {target_date.strftime('%Y-%m-%d')}")
+
+        except Exception as e:
+            print(f"Error processing historical data for {ticker}: {e}")
+            stock_data[ticker] = {"price": 0}
+            
+    return stock_data
+
 # --- (修改) 儲存邏輯改為 SQL ---
-def update_history_log(snapshot_data):
+def update_history_log(snapshot_data, target_date=None):
     """
     (已修改) 
     儲存 snapshot 物件到 history.db
     """
-    today_str = datetime.now().strftime('%Y-%m-%d')
-    
+    # 如果提供了 target_date，就使用它，否則使用今天
+    date_str = target_date.strftime('%Y-%m-%d') if target_date else datetime.now().strftime('%Y-%m-%d')
+
     # (使用 INSERT OR REPLACE 進行 "Upsert"，如果日期已存在則覆蓋)
     sql = ''' INSERT OR REPLACE INTO daily_history (date, total, tw_value, cn_value)
               VALUES (?, ?, ?, ?) '''
@@ -131,14 +199,14 @@ def update_history_log(snapshot_data):
         conn = get_db_conn()
         cursor = conn.cursor()
         cursor.execute(sql, (
-            today_str,
+            date_str,
             snapshot_data['total'],
             snapshot_data['tw_value'],
             snapshot_data['cn_value']
         ))
         conn.commit()
         conn.close()
-        print(f"Saving history snapshot for {today_str}: {snapshot_data}")
+        print(f"Saving history snapshot for {date_str}: {snapshot_data}")
     except Exception as e:
         print(f"Error saving history to SQLite: {e}")
 
@@ -175,7 +243,8 @@ def save_daily_snapshot():
             "tw_value": round(total_tw_value, 4),
             "cn_value": round(total_cn_value, 4)
         }
-        update_history_log(snapshot_data)
+        # 在儲存時傳入今天的日期
+        update_history_log(snapshot_data, datetime.now().date())
         print("[Scheduler] Snapshot job finished.")
 
 
@@ -215,6 +284,7 @@ def get_portfolio():
     total_market_value_twd = 0
     total_cost_basis_twd = 0
     total_today_pl_twd = 0
+    total_prev_close_value_twd = 0 # (新) 增加一個變數來計算昨日收盤總市值
     total_tw_value = 0
     total_cn_value = 0
     processed_stocks = []
@@ -227,13 +297,23 @@ def get_portfolio():
         ticker_data = live_data.get(ticker, {})
         current_price_original = ticker_data.get('price', 0)
         prev_close_original = ticker_data.get('previous_close', 0)
+        
+        # (新) 計算昨日收盤市值 (原始貨幣)
+        prev_close_market_value_original = prev_close_original * shares
+        
         cost_basis_original = avg_cost * shares
         market_value_original = current_price_original * shares
         cost_basis_twd = cost_basis_original
         market_value_twd = market_value_original
+        
+        # (新) 計算昨日收盤市值 (台幣)
+        prev_close_market_value_twd = prev_close_market_value_original
+
         if currency == "CNY":
             cost_basis_twd *= rate_cny_twd
             market_value_twd *= rate_cny_twd
+            prev_close_market_value_twd *= rate_cny_twd # (新) 同樣要乘上匯率
+            
         pl_twd = market_value_twd - cost_basis_twd
         today_pl_original = (current_price_original - prev_close_original) * shares
         today_pl_twd = today_pl_original
@@ -242,6 +322,7 @@ def get_portfolio():
         total_market_value_twd += market_value_twd
         total_cost_basis_twd += cost_basis_twd
         total_today_pl_twd += today_pl_twd
+        total_prev_close_value_twd += prev_close_market_value_twd # (新) 累加昨日收盤總市值
         if currency == "TWD":
             total_tw_value += market_value_twd
         elif currency == "CNY":
@@ -279,8 +360,10 @@ def get_portfolio():
     except Exception as e:
         print(f"Error reading last_close_value from SQLite: {e}")
 
-    daily_diff = total_market_value_twd - last_close_value
-    daily_diff_percent = (daily_diff / last_close_value) * 100 if last_close_value != 0 else 0
+    # (*** 修正點 ***)
+    # (改用新計算的昨日總市值來計算每日變動)
+    daily_diff = total_market_value_twd - total_prev_close_value_twd
+    daily_diff_percent = (daily_diff / total_prev_close_value_twd) * 100 if total_prev_close_value_twd != 0 else 0
     
     return jsonify({
         "stocks": processed_stocks,
@@ -458,19 +541,87 @@ def get_stock_history(ticker):
         print(f"Error fetching stock history: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-if __name__ == '__main__':
-    scheduler = BackgroundScheduler(daemon=True)
-    scheduler.add_job(
-        save_daily_snapshot,
-        trigger='cron',
-        hour=15,
-        minute=30,
-        day_of_week='mon-fri'  # 只在週一至週五執行，跳過週末
-    )
-    scheduler.start()
-    print("Starting Flask app with background scheduler...")
+@app.route('/api/backfill_history', methods=['POST'])
+def backfill_history():
+    """
+    手動回補指定日期的歷史資料
+    需要一個 'date' 參數，格式為 'YYYY-MM-DD'
+    """
+    data = request.json
+    date_str = data.get('date')
+    if not date_str:
+        return jsonify({"status": "error", "message": "Missing date parameter"}), 400
+
     try:
-        app.run(debug=True, host='0.0.0.0', port=5000, use_reloader=False)
-    except (KeyboardInterrupt, SystemExit):
-        print("Shutting down scheduler...")
-        scheduler.shutdown()
+        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid date format. Use YYYY-MM-DD."}), 400
+
+    print(f"\n[Manual Backfill] Running job for {date_str}...")
+    
+    # 這裡的邏輯與 save_daily_snapshot 非常相似
+    portfolio = load_portfolio()
+    tickers = list(set(stock['ticker'] for stock in portfolio))
+    if not tickers:
+        print("[Manual Backfill] No portfolio found. Skipping.")
+        return jsonify({"status": "skipped", "message": "No portfolio found."})
+
+    # 注意：回補時我們無法得知當天的確切匯率，因此會使用目前的即時匯率
+    # 這可能會造成微小誤差，但對於補資料來說是可以接受的
+    rate_cny_twd = get_cny_to_twd_rate()
+    prices_data = get_prices_for_date(tickers, target_date)
+
+    total_market_value_twd = 0
+    total_tw_value = 0
+    total_cn_value = 0
+    for stock in portfolio:
+        ticker = stock['ticker']
+        shares = float(stock.get('shares', 0))
+        currency = stock.get("currency", "TWD")
+        
+        # 從 get_prices_for_date 獲取價格
+        close_price_original = prices_data.get(ticker, {}).get('price', 0)
+        
+        market_value_original = close_price_original * shares
+        market_value_twd = market_value_original
+        if currency == "CNY":
+            market_value_twd *= rate_cny_twd
+            
+        total_market_value_twd += market_value_twd
+        if currency == "TWD":
+            total_tw_value += market_value_twd
+        elif currency == "CNY":
+            total_cn_value += market_value_twd
+            
+    snapshot_data = {
+        "total": round(total_market_value_twd, 4),
+        "tw_value": round(total_tw_value, 4),
+        "cn_value": round(total_cn_value, 4)
+    }
+    
+    # 傳入 target_date 以儲存到正確的日期
+    update_history_log(snapshot_data, target_date)
+    
+    print(f"[Manual Backfill] Job for {date_str} finished.")
+    return jsonify({
+        "status": "success",
+        "date": date_str,
+        "snapshot": snapshot_data
+    })
+
+@app.route('/api/trigger_snapshot', methods=['POST'])
+def trigger_snapshot():
+    """
+    觸發快照任務。
+    這個端點會被獨立的排程器腳本呼叫。
+    """
+    try:
+        save_daily_snapshot()  # 執行快照任務
+        return jsonify({"status": "success", "message": "Snapshot triggered successfully."})
+    except Exception as e:
+        print(f"Error triggering snapshot: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+if __name__ == '__main__':
+    print("Starting Flask app...")
+    app.run(debug=True, host='0.0.0.0', port=5000)

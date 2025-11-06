@@ -239,7 +239,24 @@
                 <canvas id="history-chart"></canvas>
             </div>
         </div>
-        
+         
+        <!-- 除錯模式區塊 -->
+        <div id="debug-section" class="card shadow-sm mb-3" style="display: none;">
+            <div class="card-body">
+                <h5 class="card-title">除錯功能</h5>
+                <div class="row g-3">
+                    <div class="col-md-5">
+                        <label for="debug-date" class="form-label">選擇日期進行歷史資料回補</label>
+                        <input type="date" class="form-control" id="debug-date">
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button class="btn btn-warning w-100" id="backfill-btn">回補資料</button>
+                    </div>
+                </div>
+                <div id="debug-result" class="mt-3" style="display: none;"></div>
+            </div>
+        </div>
+         
         <footer class="text-center mt-4 mb-4">
              <small id="last-updated" class="text-muted" style="display: none;">尚未更新</small>
         </footer>
@@ -418,12 +435,22 @@
                         <label class="form-check-label" for="enable-pl-notification">啟用總損益閃爍通知</label>
                       </div>
                       <div class="mb-3">
-                        <label for="pl-notification-threshold" class="form-label">總損益提醒閾值 (TWD)</label>
-                        <input type="number" class="form-control" id="pl-notification-threshold" step="100" value="1000">
-                        <small class="form-text text-muted">當總損益超過此金額時顯示閃爍通知</small>
-                      </div>
-                    </div>
-                  </form>
+                       <label for="pl-notification-threshold" class="form-label">總損益提醒閾值 (TWD)</label>
+                       <input type="number" class="form-control" id="pl-notification-threshold" step="100" value="1000">
+                       <small class="form-text text-muted">當總損益超過此金額時顯示閃爍通知</small>
+                     </div>
+                   </div>
+                   
+                   <div class="mb-4">
+                     <h6 class="mb-3">除錯設定</h6>
+                     
+                     <!-- 除錯模式開關 -->
+                     <div class="form-check form-switch mb-2">
+                       <input class="form-check-input" type="checkbox" id="debug-mode">
+                       <label class="form-check-label" for="debug-mode">啟用除錯模式</label>
+                     </div>
+                   </div>
+                 </form>
                 </div>
                 <div class="modal-footer">
                   <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
