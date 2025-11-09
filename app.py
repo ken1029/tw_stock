@@ -1,14 +1,28 @@
 import json
 import yfinance as yf
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, current_app
 from datetime import datetime, date, timedelta, time
 import os
 import requests
 import pandas as pd
+import re # (新) 匯入 re
 from time import time as timestamp
 import sqlite3 # (新) 匯入 sqlite
+from threading import Thread # (新) 匯入 Thread
 
 from apscheduler.schedulers.background import BackgroundScheduler
+
+# (新) 從環境變數讀取 TWSE API 金鑰
+TWSE_APP_ID = os.environ.get('TWSE_APP_ID')
+TWSE_APP_SECRET = os.environ.get('TWSE_APP_SECRET')
+
+# (新) TWSE Token 的快取
+TWSE_TOKEN_CACHE = {"token": None, "expires_at": 0}
+
+BACKFILL_STATUS = {
+    "running": False,
+    "message": "尚未開始"
+}
 
 app = Flask(__name__)
 
@@ -24,6 +38,74 @@ def get_portfolio_file():
 def get_history_db():
     """獲取歷史數據庫文件路徑"""
     return app.config.get('HISTORY_DB', HISTORY_DB)
+
+def get_current_prices(tickers):
+    """
+    (已修改) 三路混合：獲取即時價格
+    - .TW 股票: 優先使用 get_mis_tw_prices
+    - .SS/.SZ 股票: 優先使用 get_sina_current_prices
+    - 其他股票 (及備援): 使用 get_yfinance_current_prices
+    """
+    if not tickers:
+        return {}
+    
+    print(f"\n[Hybrid Prices] Fetching: {' '.join(tickers)}")
+    
+    # 1. 分離 Tickers
+    tw_tickers = [t for t in tickers if t.endswith('.TW') or t.endswith('.TWO')] # (修改)
+    china_tickers = [t for t in tickers if t.endswith('.SS') or t.endswith('.SZ')]
+    yfinance_tickers = [t for t in tickers if 
+                        not t.endswith('.TW') and 
+                        not t.endswith('.TWO') and
+                        not t.endswith('.SS') and 
+                        not t.endswith('.SZ')]
+    
+    all_stock_data = {}
+    
+    # 2. 抓取 .TW 股票 (使用 MIS API)
+    if tw_tickers:
+        mis_data = get_mis_tw_prices(tw_tickers)
+        # (新) 注入來源標籤
+        for ticker, data in mis_data.items():
+            data['source'] = 'MIS'
+        all_stock_data.update(mis_data)
+        
+        failed_tw_tickers = [t for t in tw_tickers if t not in mis_data]
+        if failed_tw_tickers:
+            print(f"[Hybrid Prices] MIS API failed for: {failed_tw_tickers}. Adding to yfinance fallback.")
+            yfinance_tickers.extend(failed_tw_tickers) 
+
+    # 3. 抓取陸股 (使用 Sina)
+    if china_tickers:
+        print(f"[Hybrid Prices] Fetching {len(china_tickers)} China stocks via Sina...")
+        sina_data = get_sina_current_prices(china_tickers)
+        # (新) 注入來源標籤
+        for ticker, data in sina_data.items():
+            data['source'] = 'Sina'
+        all_stock_data.update(sina_data)
+        
+        failed_sina_tickers = [t for t in china_tickers if t not in sina_data]
+        if failed_sina_tickers:
+            print(f"[Hybrid Prices] Sina failed for: {failed_sina_tickers}. Adding to yfinance fallback.")
+            yfinance_tickers.extend(failed_sina_tickers) 
+
+    # 4. 抓取其他股票 (及抓取失敗的) (使用 yfinance)
+    if yfinance_tickers:
+        print(f"[Hybrid Prices] Fetching {len(yfinance_tickers)} stocks via yfinance...")
+        yfinance_data = get_yfinance_current_prices(yfinance_tickers)
+        # (新) 注入來源標籤
+        for ticker, data in yfinance_data.items():
+            data['source'] = 'yfinance'
+        all_stock_data.update(yfinance_data)
+        
+    # 5. 最終檢查 (不變)
+    for ticker in tickers:
+        if ticker not in all_stock_data:
+            print(f"Warning: No price data found for {ticker} from any source.")
+            # (新) 標記來源為 N/A
+            all_stock_data[ticker] = {"price": 0, "previous_close": 0, "source": "N/A"}
+
+    return all_stock_data
 
 # --- (匯率、load/save portfolio 函式... 保持不變) ---
 cny_rate_cache = {"rate": None, "timestamp": 0}
@@ -71,66 +153,296 @@ def get_db_conn():
     conn.row_factory = sqlite3.Row # (讓回傳結果可以用欄位名稱存取)
     return conn
 
-def get_current_prices(tickers):
+def get_previous_day_data(target_date):
+    """
+    獲取指定日期前一天的資料
+    """
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+        
+        # 查找早於目標日期的最後一筆資料
+        cursor.execute("SELECT date, total, tw_value, cn_value FROM daily_history WHERE date < ? ORDER BY date DESC LIMIT 1",
+                      (target_date.strftime('%Y-%m-%d'),))
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return {
+                "date": row['date'],
+                "total": row['total'],
+                "tw_value": row['tw_value'],
+                "cn_value": row['cn_value']
+            }
+        return None
+    except Exception as e:
+        print(f"Error getting previous day data: {e}")
+        return None
+
+def get_mis_tw_prices(tickers):
+    """
+    (已修改) 使用 mis.twse.com.tw API 批次抓取台股即時價格
+    - 新增對 .TWO (OTC) 的支援
+    - 新增 'stock_code' 到 'yfinance_ticker' 的映射表
+    """
+    if not tickers:
+        return {}
+
+    base_url = "http://mis.twse.com.tw/stock/api/getStockInfo.jsp"
+    
+    query_parts = []
+    # (新) 建立一個 '查詢代碼' (e.g., '00679B') 到 '原始YF Ticker' (e.g., '00679B.TWO') 的映射
+    code_to_yf_map = {} 
+    
+    for ticker_str in tickers:
+        try:
+            # '2330.TW' -> '2330'
+            # '00679B.TWO' -> '00679B'
+            stock_code = ticker_str.split('.')[0]
+            query_key = f"{stock_code}.tw" # 統一的查詢格式, e.g., '00679B.tw'
+            
+            if ticker_str.endswith('.TW'):
+                query_parts.append(f"tse_{query_key}")
+            elif ticker_str.endswith('.TWO'):
+                # 根據您的資訊，.TWO (OTC) 對應 otc_
+                query_parts.append(f"otc_{query_key}")
+            else:
+                # (備援) 如果是不明的 .TW/.TWO 結尾，兩個都查
+                query_parts.append(f"tse_{query_key}")
+                query_parts.append(f"otc_{query_key}")
+            
+            # (新) 儲存映射: '00679B': '00679B.TWO'
+            code_to_yf_map[stock_code] = ticker_str
+            
+        except Exception as e:
+            print(f"[MIS API] Error processing ticker_str {ticker_str}: {e}")
+
+    if not query_parts:
+        return {}
+        
+    # (新) 使用 set() 移除重複的查詢 (例如 'tse_2330.tw|otc_2330.tw')
+    query_string = '|'.join(list(set(query_parts)))
+    
+    params = {
+        "ex_ch": query_string,
+        "_": int(timestamp()) # 避免 cache
+    }
+    
+    stock_data = {}
+    try:
+        print(f"[MIS API] Fetching {len(tickers)} TW/TWO stocks...")
+        res = requests.get(base_url, params=params, timeout=5)
+        res.raise_for_status()
+        data = res.json()
+
+        if data.get("rtcode") != "0000" or "msgArray" not in data:
+            print("[MIS API] Error: Invalid response from MIS API")
+            return {}
+
+        for stock in data.get("msgArray", []):
+            stock_code = stock.get("c") # e.g., '00679B'
+            if not stock_code:
+                continue
+
+            # (修改) 使用映射表找回原始的 yfinance Ticker
+            # e.g., '00679B' -> '00679B.TWO'
+            yfinance_key = code_to_yf_map.get(stock_code)
+            
+            if not yfinance_key:
+                # 找不到對應的 key (例如 API 回傳了我們沒查詢的東西)
+                continue
+
+            current_price = stock.get("z", "0")
+            prev_close = stock.get("y", "0")
+
+            if current_price == "-" or current_price == "": current_price = "0"
+            if prev_close == "-" or prev_close == "": prev_close = "0"
+                
+            if float(current_price) == 0:
+                open_price = stock.get("o", "0")
+                if open_price != "0" and open_price != "-":
+                    current_price = open_price
+                else:
+                    current_price = prev_close
+
+            stock_data[yfinance_key] = {
+                "price": float(current_price),
+                "previous_close": float(prev_close)
+            }
+        
+        print(f"[MIS API] Success. Found {len(stock_data)} stocks.")
+        return stock_data
+
+    except Exception as e:
+        print(f"[MIS API] Request failed: {e}. Will fall back to yfinance.")
+        return {}
+
+
+def get_sina_current_prices(tickers):
+    """
+    (新) 使用 Sina 即時 API 批次抓取陸股價格
+    tickers: ['601138.SS']
+    """
+    stock_data = {}
+    if not tickers:
+        return stock_data
+
+    # 1. 轉換為 Sina 格式 (e.g., '601138.SS' -> 'sh601138')
+    sina_symbols = []
+    # 建立一個地圖，讓我們能從 'sh601138' 找回 '601138.SS'
+    yf_to_sina_map = {}
+    
+    for yf_ticker in tickers:
+        try:
+            code, market = yf_ticker.split('.')
+            if market.upper() == 'SS':
+                sina_symbol = f"sh{code}"
+            elif market.upper() == 'SZ':
+                sina_symbol = f"sz{code}"
+            else:
+                continue # 不是可識別的陸股代號
+                
+            sina_symbols.append(sina_symbol)
+            # 儲存 'sh601138': '601138.SS' 的對應關係
+            yf_to_sina_map[sina_symbol] = yf_ticker
+            
+        except Exception as e:
+            print(f"[Sina] Error splitting ticker {yf_ticker}: {e}")
+
+    if not sina_symbols:
+        return {}
+
+    # 2. 建立批次 API 請求
+    api_url = f"http://hq.sinajs.cn/list={','.join(sina_symbols)}"
+    headers = {'Referer': 'http://finance.sina.com.cn/'}
+    print(f"[Sina] Fetching: {api_url}")
+
+    try:
+        res = requests.get(api_url, headers=headers, timeout=5)
+        res.raise_for_status()
+        raw_text = res.text
+        
+        # 3. 解析 (Sina 會回傳多行，每行用 ; 分隔)
+        lines = raw_text.strip().split(';\n')
+        for line in lines:
+            if not line:
+                continue
+            
+            # 找出 hq_str_sh601138="...
+            match = re.search(r'var hq_str_(\w+)="([^"]+)"', line)
+            if not match:
+                continue
+                
+            sina_symbol = match.group(1) # e.g., 'sh601138'
+            data_string = match.group(2)
+            parts = data_string.split(',')
+            
+            # 欄位 2: 昨日收盤價
+            # 欄位 3: 目前市價
+            if len(parts) > 3:
+                prev_close = parts[2]
+                current_price = parts[3]
+                
+                # 用地圖找回 yfinance 的 key
+                yf_ticker = yf_to_sina_map.get(sina_symbol)
+
+                if yf_ticker and float(current_price) > 0:
+                    stock_data[yf_ticker] = {
+                        "price": float(current_price),
+                        "previous_close": float(prev_close)
+                    }
+                elif yf_ticker:
+                    # (備援) 如果目前市價為 0 (例如剛開盤)，使用昨收
+                    stock_data[yf_ticker] = {
+                        "price": float(prev_close),
+                        "previous_close": float(prev_close)
+                    }
+    except Exception as e:
+        print(f"Error [Sina] processing request: {e}")
+        # 發生錯誤時回傳空 dict，主控函式會改用 yfinance 備援
+        
+    return stock_data
+
+def get_yfinance_current_prices(tickers):
     if not tickers:
         return {}
     print(f"[yfinance] Fetching prices: {' '.join(tickers)}")
     data = yf.Tickers(' '.join(tickers))
     stock_data = {}
+    today = datetime.now().date()
+
     for ticker_str, ticker_obj in data.tickers.items():
         try:
             original_ticker_key = next(t for t in tickers if t.upper() == ticker_str.upper())
             
-            # 獲取目前市價
-            info = ticker_obj.fast_info
-            price = info.get('last_price', info.get('regularMarketPrice'))
-            
-            # 更準確地獲取昨日收盤價
-            # 使用history方法獲取最近幾天的資料以確保能獲取到正確的昨日收盤價
-            hist = ticker_obj.history(period='5d') # 넉넉하게 5일치 가져오기
-
-            # 오늘 날짜 (시간 정보 제외)
-            today = datetime.now().date()
-
-            # 어제 종가 초기화
+            price = None
             prev_close = None
 
-            if not hist.empty:
-                # 인덱스를 날짜 형식으로 변환
-                hist.index = hist.index.date
-                # 오늘 이전의 데이터만 필터링
-                past_data = hist[hist.index < today]
-                if not past_data.empty:
-                    # 가장 최근 날짜의 종가를 어제 종가로 사용
-                    prev_close = past_data['Close'].iloc[-1]
-
-            # 만약 위 방법으로 종가를 못찾으면 원래 방법으로 대체
-            if prev_close is None:
-                prev_close = info.get('previousClose')
-                
-            if not price or not prev_close:
+            # --- 步驟 1: 優先獲取 "昨日收盤價" (來源: history) ---
+            # 這是最可靠的昨收來源
+            try:
+                hist = ticker_obj.history(period='5d')
                 if not hist.empty:
-                    if not price:
-                        price = hist['Close'].iloc[-1]
-                    if not prev_close and len(hist) > 1:
-                        prev_close = hist['Close'].iloc[-2]
-                    elif not prev_close:
-                        prev_close = price
-                else:
-                    print(f"Warning [yfinance]: Could not find price data for {original_ticker_key}")
-                    price = 0
-                    prev_close = 0
+                    # 確保索引是日期 (無時間)
+                    hist.index = hist.index.date
+                    # 找出所有 "今天以前" 的資料
+                    past_data = hist[hist.index < today]
+                    if not past_data.empty:
+                        # 取得 "今天以前" 的最後一筆收盤價
+                        prev_close = past_data['Close'].iloc[-1]
+            except Exception as e:
+                print(f"  -> [yfinance hist] Error processing history for {ticker_str}: {e}")
+
+            # --- 步驟 2: 優先獲取 "目前市價" (來源: fast_info) ---
+            # 這是最快的即時價來源
+            try:
+                info = ticker_obj.fast_info
+                price = info.get('last_price', info.get('regularMarketPrice'))
+                
+                # 如果 fast_info 失敗，且 history 有資料，使用 history 的 "最後一筆" (可能是今天)
+                if (not price or price == 0) and not hist.empty:
+                    price = hist['Close'].iloc[-1]
+
+                # 如果 fast_info 的昨收是唯一來源 (步驟1 失敗時)
+                if (not prev_close or prev_close == 0):
+                    prev_close = info.get('previousClose')
                     
-            stock_data[original_ticker_key] = {"price": price, "previous_close": prev_close}
+            except Exception as e:
+                print(f"  -> [yfinance fast_info] Error processing fast_info for {ticker_str}: {e}")
+
+
+            # --- 步驟 3: 最終備援與清理 (嚴格邏輯) ---
+            
+            # 情況 1: 盤前/盤中 (市價為 0，但昨收有值)
+            if (not price or price == 0) and (prev_close and prev_close > 0):
+                price = prev_close
+            
+            # 情況 2: 新股/資料不全 (市價有值，但昨收為 0)
+            elif (price and price > 0) and (not prev_close or prev_close == 0):
+                prev_close = price
+            
+            # 情況 3: 找不到任何資料
+            elif (not price or price == 0) and (not prev_close or prev_close == 0):
+                price = 0
+                prev_close = 0
+
+            stock_data[original_ticker_key] = {
+                "price": float(price), 
+                "previous_close": float(prev_close)
+            }
+        
         except Exception as e:
             print(f"Error [yfinance price] processing {ticker_str}: {e}")
             matching_tickers = [t for t in tickers if t.upper() == ticker_str.upper()]
             if matching_tickers:
                 stock_data[matching_tickers[0]] = {"price": 0, "previous_close": 0}
+                
     return stock_data
 
-def get_prices_for_date(tickers, target_date):
-    """獲取指定日期範圍內的收盤價"""
+def get_yfinance_prices_for_date(tickers, target_date):
+    """
+    (已更名) 這是 yfinance 的版本，作為備用
+    """
     if not tickers:
         return {}
     
@@ -157,30 +469,274 @@ def get_prices_for_date(tickers, target_date):
             else:
                 price_series = hist_data[ticker]['Close']
 
+            price_found = False
             if not price_series.empty:
                 # 獲取該日期的收盤價
                 price = price_series.iloc[-1]
-                if pd.isna(price): # 處理假日或無交易日的情況
-                     # 如果當天沒有資料，嘗試往前找最近的一個交易日
-                    temp_end = target_date
-                    temp_start = temp_end - timedelta(days=7) # 最多往前找7天
-                    temp_hist = yf.download(ticker, start=temp_start, end=temp_end, interval="1d")
-                    if not temp_hist.empty:
-                        price = temp_hist['Close'].iloc[-1]
-                        print(f"  -> {ticker} on {target_date.strftime('%Y-%m-%d')} has no data, using last valid price: {price:.2f} on {temp_hist.index[-1].strftime('%Y-%m-%d')}")
-                    else:
-                        price = 0
-                        print(f"  -> Could not find any recent price for {ticker}")
-                stock_data[ticker] = {"price": price}
-            else:
-                stock_data[ticker] = {"price": 0}
-                print(f"Warning: No historical data found for {ticker} on {target_date.strftime('%Y-%m-%d')}")
+                if not pd.isna(price): 
+                    stock_data[ticker] = {"price": price}
+                    price_found = True
+
+            if not price_found:
+                 # 如果當天沒有資料，嘗試往前找最近的一個交易日
+                temp_end = target_date
+                temp_start = temp_end - timedelta(days=14) # 最多往前找7天
+                temp_hist = yf.download(ticker, start=temp_start, end=temp_end, interval="1d")
+                if not temp_hist.empty:
+                    price = temp_hist['Close'].iloc[-1]
+                    print(f"  -> [yfinance] {ticker} on {target_date.strftime('%Y-%m-%d')} has no data, using last valid price: {price:.2f} on {temp_hist.index[-1].strftime('%Y-%m-%d')}")
+                    stock_data[ticker] = {"price": price}
+                else:
+                    price = 0
+                    print(f"  -> [yfinance] Could not find any recent price for {ticker}")
+                    stock_data[ticker] = {"price": 0}
 
         except Exception as e:
-            print(f"Error processing historical data for {ticker}: {e}")
+            print(f"[yfinance] Error processing historical data for {ticker}: {e}")
             stock_data[ticker] = {"price": 0}
             
     return stock_data
+
+
+def get_prices_for_date(tickers, target_date):
+    """
+    (已修改) 簡化混合：獲取指定日期的收盤價
+    - .TW 股票: 優先使用 TWSE OpenAPI
+    - 其他股票 (包含 .SS/.SZ 及備援): 使用 yfinance
+    """
+    if not tickers:
+        return {}
+    
+    print(f"\n[Hybrid Backfill] Getting prices for {target_date.strftime('%Y-%m-%d')}")
+    
+    token = get_twse_token() if (TWSE_APP_ID and TWSE_APP_SECRET) else None
+    if token:
+        print("[Hybrid Backfill] TWSE Token acquired.")
+    else:
+        print("[Hybrid Backfill] TWSE Token not found. Using yfinance for .TW stocks.")
+        
+    target_date_str = target_date.strftime('%Y-%m-%d')
+    
+    # 1. 分離 Tickers
+    tw_tickers = []
+    china_tickers = []
+    yfinance_tickers = []
+    
+    for t in tickers:
+        if (t.endswith('.TW') or t.endswith('.TWO')) and token:
+            tw_tickers.append(t)
+        elif (t.endswith('.TW') or t.endswith('.TWO')) and not token:
+            # 如果沒有 TWSE token，將 .TW/.TWO 股票交給 yfinance
+            yfinance_tickers.append(t)
+        elif t.endswith('.SS') or t.endswith('.SZ'):
+            # 將中國股票單獨分離出來
+            china_tickers.append(t)
+        else:
+            yfinance_tickers.append(t)
+            
+    stock_data = {}
+    
+    # 2. 處理 .TW 股票 (使用 TWSE OpenAPI with backfill)
+    print(f"[Hybrid Backfill] Querying TWSE API for {len(tw_tickers)} tickers...")
+    for ticker in tw_tickers:
+        price = get_twse_price_for_date_with_backfill(ticker, target_date_str, token)
+        if price is not None:
+            stock_data[ticker] = {"price": price}
+        else:
+            yfinance_tickers.append(ticker) # 失敗，交給 yfinance 備援
+
+    # 3. 處理中國股票 (.SS/.SZ)
+    print(f"[Hybrid Backfill] Querying yfinance for {len(china_tickers)} China tickers...")
+    for ticker in china_tickers:
+        # 直接使用 yfinance 的歷史價格獲取函數，它已經實現了往前查找邏輯
+        price_data = get_yfinance_prices_for_date([ticker], target_date)
+        if ticker in price_data and price_data[ticker]["price"] != 0:
+            stock_data[ticker] = {"price": price_data[ticker]["price"]}
+        else:
+            # 如果 yfinance 也無法獲取有效價格，將價格設為 0
+            stock_data[ticker] = {"price": 0}
+
+    # 4. (修改) 處理所有其他股票 (使用 yfinance)
+    if yfinance_tickers:
+        print(f"[Hybrid Backfill] Calling yfinance fallback for {len(yfinance_tickers)} tickers...")
+        yfinance_data = get_yfinance_prices_for_date(yfinance_tickers, target_date)
+        stock_data.update(yfinance_data)
+        
+    # 5. 最終檢查
+    for ticker in tickers:
+        if ticker not in stock_data:
+            print(f"Warning: No price data found for {ticker} from any source.")
+            stock_data[ticker] = {"price": 0}
+        elif stock_data[ticker].get("price", 0) == 0:
+            # 如果價格為 0，嘗試往前查找
+            print(f"Warning: Price is 0 for {ticker} on {target_date_str}, attempting backfill...")
+            if ticker.endswith('.TW') or ticker.endswith('.TWO'):
+                # 台股使用 TWSE API 往前查找
+                if token:
+                    price = get_twse_price_for_date_with_backfill(ticker, target_date_str, token)
+                    if price is not None:
+                        stock_data[ticker] = {"price": price}
+                else:
+                    # 沒有 token 時，使用 yfinance 往前查找
+                    price_data = get_yfinance_prices_for_date([ticker], target_date)
+                    if ticker in price_data:
+                        stock_data[ticker] = price_data[ticker]
+            elif ticker.endswith('.SS') or ticker.endswith('.SZ'):
+                # 中國股票使用 yfinance 往前查找
+                price_data = get_yfinance_prices_for_date([ticker], target_date)
+                if ticker in price_data and price_data[ticker]["price"] != 0:
+                    stock_data[ticker] = price_data[ticker]
+                # 如果 yfinance 也無法獲取有效價格，保持原來的 0 值
+            else:
+                # 其他股票使用 yfinance 往前查找
+                price_data = get_yfinance_prices_for_date([ticker], target_date)
+                if ticker in price_data:
+                    stock_data[ticker] = price_data[ticker]
+            
+    return stock_data
+
+def get_twse_token():
+    """
+    (新) 獲取 TWSE OpenAPI 的 Bearer Token
+    """
+    global TWSE_TOKEN_CACHE
+    now = timestamp()
+
+    # 檢查快取
+    if TWSE_TOKEN_CACHE["token"] and now < TWSE_TOKEN_CACHE["expires_at"]:
+        print("[TWSE API] Using cached token")
+        return TWSE_TOKEN_CACHE["token"]
+
+    if not TWSE_APP_ID or not TWSE_APP_SECRET:
+        print("[TWSE API] Error: TWSE_APP_ID or TWSE_APP_SECRET is not set.")
+        return None
+
+    token_url = "https://openapi.twse.com.tw/auth"
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+    data = {
+        "grant_type": "client_credentials",
+        "client_id": TWSE_APP_ID,
+        "client_secret": TWSE_APP_SECRET
+    }
+    
+    try:
+        print("[TWSE API] Fetching new token...")
+        res = requests.post(token_url, headers=headers, data=data)
+        res.raise_for_status()
+        token_data = res.json()
+        
+        access_token = token_data.get("access_token")
+        expires_in = token_data.get("expires_in", 3600) # 預設1小時
+        
+        TWSE_TOKEN_CACHE["token"] = access_token
+        # 提早 5 分鐘失效，增加保險
+        TWSE_TOKEN_CACHE["expires_at"] = now + expires_in - 300 
+        
+        print(f"[TWSE API] Got new token, expires in {expires_in}s")
+        return access_token
+        
+    except Exception as e:
+        print(f"[TWSE API] Error getting token: {e}")
+        return None
+
+def get_twse_price_for_date(stock_code, target_date_str, token):
+    """
+    (新) 使用 TWSE OpenAPI 獲取指定日期的收盤價
+    stock_code: '2330.TW' or '0050.TW' or 'XXXX.TWO'
+    target_date_str: 'YYYY-MM-DD'
+    """
+    
+    # 1. 處理 Ticker 格式 (e.g., '2330.TW' -> '2330')
+    if stock_code.endswith(".TW") or stock_code.endswith(".TWO"):
+        stock_code_digits = stock_code.split('.')[0]
+    else:
+        # 如果格式不符，可能不是 TWSE 股票
+        return None
+    
+    # 2. 處理日期格式 (e.g., '2025-11-08' -> '20251108')
+    date_yyyymmdd = target_date_str.replace('-', '')
+    
+    api_url = f"https://openapi.twse.com.tw/api/v1/exchangeReport/STOCK_DAY"
+    params = {
+        "date": date_yyyymmdd,
+        "stockCode": stock_code_digits,
+        "response": "JSON" # 確保回傳 JSON
+    }
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
+    
+    try:
+        res = requests.get(api_url, headers=headers, params=params)
+        res.raise_for_status()
+        data = res.json()
+        
+        # (重要) 檢查 TWSE API 是否回傳成功
+        if data.get("resultCode") != "0000":
+            # resultCode '2001' 通常是 '查無資料' (例如假日或尚未開盤)
+            if data.get("resultCode") != "2001":
+                 print(f"[TWSE API] Error for {stock_code} on {date_yyyymmdd}: {data.get('resultMessage')}")
+            return None
+
+        # (重要) 檢查 data 欄位
+        api_data = data.get("data")
+        if not api_data:
+            # print(f"[TWSE API] No data found for {stock_code} on {date_yyyymmdd}. (Holiday or non-trading day?)")
+            return None
+        
+        # API 回傳的是一個 list，我們取第一個
+        closing_price_str = api_data[0].get("ClosingPrice")
+        
+        if closing_price_str is None or closing_price_str == "--":
+            # print(f"[TWSE API] ClosingPrice not found for {stock_code} on {date_yyyymmdd}")
+            return None
+
+        # 轉換為 float，處理千分位 ,
+        price = float(closing_price_str.replace(',', ''))
+        
+        # 如果價格為0，也視為無效資料
+        if price == 0:
+            return None
+            
+        return price
+        
+    except Exception as e:
+        print(f"[TWSE API] Exception for {stock_code}: {e}")
+        return None
+
+def get_twse_price_for_date_with_backfill(stock_code, target_date_str, token):
+    """
+    使用 TWSE OpenAPI 獲取指定日期的收盤價，如果當天沒有資料則往前查找
+    stock_code: '2330.TW' or '0050.TW' or 'XXXX.TWO'
+    target_date_str: 'YYYY-MM-DD'
+    """
+    # 先嘗試獲取指定日期的價格
+    price = get_twse_price_for_date(stock_code, target_date_str, token)
+    if price is not None:
+        return price
+    
+    # 如果當天沒有資料，嘗試往前找最近的一個交易日
+    try:
+        target_date = datetime.strptime(target_date_str, '%Y-%m-%d').date()
+        temp_end = target_date
+        temp_start = temp_end - timedelta(days=14)  # 最多往前找7天
+        
+        current_check_date = temp_end
+        while current_check_date >= temp_start:
+            check_date_str = current_check_date.strftime('%Y-%m-%d')
+            price = get_twse_price_for_date(stock_code, check_date_str, token)
+            if price is not None:
+                print(f"  -> [TWSE API] {stock_code} on {target_date_str} has no data, using last valid price: {price:.2f} on {check_date_str}")
+                return price
+            current_check_date -= timedelta(days=1)
+            
+        print(f"  -> [TWSE API] Could not find any recent price for {stock_code}")
+        return None
+    except Exception as e:
+        print(f"[TWSE API] Error processing backfill for {stock_code}: {e}")
+        return None
 
 # --- (修改) 儲存邏輯改為 SQL ---
 def update_history_log(snapshot_data, target_date=None):
@@ -210,17 +766,24 @@ def update_history_log(snapshot_data, target_date=None):
     except Exception as e:
         print(f"Error saving history to SQLite: {e}")
 
-# (save_daily_snapshot 保持不變 - 它只負責計算，然後呼叫 update_history_log)
 def save_daily_snapshot():
     with app.app_context(): 
-        print(f"\n[Scheduler] Running 15:30 snapshot job... ({datetime.now()})")
+        # (重要) 建議將排程器時間改為 18:00，以確保 TWSE 資料已發布
+        print(f"\n[Scheduler] Running Daily Snapshot Job... ({datetime.now()})")
         portfolio = load_portfolio()
         tickers = list(set(stock['ticker'] for stock in portfolio))
         if not tickers:
             print("[Scheduler] No portfolio found. Skipping snapshot.")
             return
+            
         rate_cny_twd = get_cny_to_twd_rate()
-        prices_data = get_current_prices(tickers) 
+        
+        # --- *** (唯一的修改點) *** ---
+        # 從 "即時價格" 改為抓取 "指定日期的收盤價" (會自動使用 TWSE API)
+        # prices_data = get_current_prices(tickers) # 舊的
+        prices_data = get_prices_for_date(tickers, datetime.now().date()) # 新的
+        # --- *** (修改結束) *** ---
+        
         total_market_value_twd = 0
         total_tw_value = 0
         total_cn_value = 0
@@ -228,7 +791,10 @@ def save_daily_snapshot():
             ticker = stock['ticker']
             shares = float(stock.get('shares', 0))
             currency = stock.get("currency", "TWD") 
+            
+            # 這裡的 .get('price', 0) 保持不變，因為 get_prices_for_date 的回傳結構是相容的
             current_price_original = prices_data.get(ticker, {}).get('price', 0)
+            
             market_value_original = current_price_original * shares
             market_value_twd = market_value_original
             if currency == "CNY":
@@ -238,12 +804,13 @@ def save_daily_snapshot():
                 total_tw_value += market_value_twd
             elif currency == "CNY":
                 total_cn_value += market_value_twd
+        
         snapshot_data = {
             "total": round(total_market_value_twd, 4),
             "tw_value": round(total_tw_value, 4),
             "cn_value": round(total_cn_value, 4)
         }
-        # 在儲存時傳入今天的日期
+        
         update_history_log(snapshot_data, datetime.now().date())
         print("[Scheduler] Snapshot job finished.")
 
@@ -264,21 +831,6 @@ def get_portfolio():
     
     # (檢查名稱快取 - 邏輯不變)
     need_to_save_portfolio = False
-    for stock in portfolio:
-        if not stock.get("name") or stock.get("name") == stock.get("ticker"):
-            try:
-                print(f"Metadata missing. Fetching name for {stock['ticker']}...")
-                ticker_info = yf.Ticker(stock['ticker']).info
-                stock["name"] = ticker_info.get('shortName', ticker_info.get('longName', stock['ticker']))
-                print(f"Found name: {stock['name']}")
-                need_to_save_portfolio = True
-            except Exception as e:
-                print(f"Error fetching metadata for {stock['ticker']}: {e}")
-                stock["name"] = stock['ticker']
-                need_to_save_portfolio = True
-    if need_to_save_portfolio:
-        print("Saving new names to portfolio.json...")
-        save_portfolio(portfolio)
 
     # (計算總覽 - 邏輯不變)
     total_market_value_twd = 0
@@ -297,6 +849,7 @@ def get_portfolio():
         ticker_data = live_data.get(ticker, {})
         current_price_original = ticker_data.get('price', 0)
         prev_close_original = ticker_data.get('previous_close', 0)
+        data_source = ticker_data.get('source', 'N/A') # <--- (新) 在這裡加入
         
         # (新) 計算昨日收盤市值 (原始貨幣)
         prev_close_market_value_original = prev_close_original * shares
@@ -339,7 +892,8 @@ def get_portfolio():
             "market_value": market_value_twd,
             "pl": pl_twd,
             "today_pl": today_pl_twd,
-            "pl_percent": (pl_twd / cost_basis_twd) * 100 if cost_basis_twd != 0 else 0
+            "pl_percent": (pl_twd / cost_basis_twd) * 100 if cost_basis_twd != 0 else 0,
+            "data_source": data_source # <--- (新) 在這裡加入
         })
     total_pl_twd = total_market_value_twd - total_cost_basis_twd
     total_pl_percent = (total_pl_twd / total_cost_basis_twd) * 100 if total_cost_basis_twd != 0 else 0
@@ -541,45 +1095,32 @@ def get_stock_history(ticker):
         print(f"Error fetching stock history: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route('/api/backfill_history', methods=['POST'])
-def backfill_history():
+def _run_backfill_for_single_date(target_date):
     """
-    手動回補指定日期的歷史資料
-    需要一個 'date' 參數，格式為 'YYYY-MM-DD'
+    (新) 執行單日回補的核心邏輯
+    這假設它在一個 Flask app context 中被呼叫
     """
-    data = request.json
-    date_str = data.get('date')
-    if not date_str:
-        return jsonify({"status": "error", "message": "Missing date parameter"}), 400
-
-    try:
-        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-    except ValueError:
-        return jsonify({"status": "error", "message": "Invalid date format. Use YYYY-MM-DD."}), 400
-
-    print(f"\n[Manual Backfill] Running job for {date_str}...")
+    print(f"\n[Backfill Logic] Running job for {target_date}...")
     
-    # 這裡的邏輯與 save_daily_snapshot 非常相似
     portfolio = load_portfolio()
     tickers = list(set(stock['ticker'] for stock in portfolio))
     if not tickers:
-        print("[Manual Backfill] No portfolio found. Skipping.")
-        return jsonify({"status": "skipped", "message": "No portfolio found."})
+        print("[Backfill Logic] No portfolio found. Skipping.")
+        # 回傳一個可識別的「跳過」狀態
+        return {"status": "skipped", "message": "No portfolio found."}, None, None
 
-    # 注意：回補時我們無法得知當天的確切匯率，因此會使用目前的即時匯率
-    # 這可能會造成微小誤差，但對於補資料來說是可以接受的
     rate_cny_twd = get_cny_to_twd_rate()
     prices_data = get_prices_for_date(tickers, target_date)
 
     total_market_value_twd = 0
     total_tw_value = 0
     total_cn_value = 0
+    detailed_info = []
+    
     for stock in portfolio:
         ticker = stock['ticker']
         shares = float(stock.get('shares', 0))
         currency = stock.get("currency", "TWD")
-        
-        # 從 get_prices_for_date 獲取價格
         close_price_original = prices_data.get(ticker, {}).get('price', 0)
         
         market_value_original = close_price_original * shares
@@ -593,21 +1134,231 @@ def backfill_history():
         elif currency == "CNY":
             total_cn_value += market_value_twd
             
+        detailed_info.append({
+            "ticker": ticker, "name": stock.get("name", ticker), "shares": shares,
+            "currency": currency, "close_price_original": round(close_price_original, 4),
+            "market_value_original": round(market_value_original, 4),
+            "market_value_twd": round(market_value_twd, 4),
+            "rate_used": rate_cny_twd if currency == "CNY" else 1.0
+        })
+            
     snapshot_data = {
         "total": round(total_market_value_twd, 4),
         "tw_value": round(total_tw_value, 4),
         "cn_value": round(total_cn_value, 4)
     }
     
-    # 傳入 target_date 以儲存到正確的日期
+    # 檢查當天台灣股票總市值是否為0，如果是則使用前一天的台灣股票資料
+    # 檢查當天中國股票總市值是否為0，如果是則使用前一天的中國股票資料
+    if snapshot_data["tw_value"] == 0 or snapshot_data["cn_value"] == 0:
+        print(f"[Backfill Logic] TW or CN market value is 0 for {target_date}, checking previous day data...")
+        previous_day_data = get_previous_day_data(target_date)
+        if previous_day_data:
+            # 只替換為0的部分，而不是全部替換
+            if snapshot_data["tw_value"] == 0:
+                print(f"[Backfill Logic] Using previous day TW data from {previous_day_data['date']}")
+                snapshot_data["tw_value"] = previous_day_data["tw_value"]
+            
+            if snapshot_data["cn_value"] == 0:
+                print(f"[Backfill Logic] Using previous day CN data from {previous_day_data['date']}")
+                snapshot_data["cn_value"] = previous_day_data["cn_value"]
+                
+            # 重新計算總市值
+            snapshot_data["total"] = round(snapshot_data["tw_value"] + snapshot_data["cn_value"], 4)
+        else:
+            print(f"[Backfill Logic] No previous day data found for {target_date}")
+    
     update_history_log(snapshot_data, target_date)
     
-    print(f"[Manual Backfill] Job for {date_str} finished.")
+    print(f"[Backfill Logic] Job for {target_date} finished.")
+    # 回傳結果供 API 使用
+    return snapshot_data, detailed_info, rate_cny_twd
+
+@app.route('/api/backfill_history', methods=['POST'])
+def backfill_history():
+    """
+    (已修改)
+    手動回補 "指定單日" 的歷史資料
+    """
+    data = request.json
+    date_str = data.get('date')
+    if not date_str:
+        return jsonify({"status": "error", "message": "Missing date parameter"}), 400
+
+    try:
+        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid date format. Use YYYY-MM-DD."}), 400
+
+    try:
+        # (新) 呼叫重構後的函式
+        snapshot_data, detailed_info, rate_cny_twd = _run_backfill_for_single_date(target_date)
+        
+        if isinstance(snapshot_data, dict) and snapshot_data.get("status") == "skipped":
+            return jsonify(snapshot_data)
+
+        return jsonify({
+            "status": "success",
+            "date": date_str,
+            "snapshot": snapshot_data,
+            "detailed_info": detailed_info,
+            "rate_cny_twd": rate_cny_twd
+        })
+    except Exception as e:
+        print(f"[Manual Backfill] Error for {date_str}: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+def _execute_range_backfill(app, start_date_str, end_date_str):
+    """
+    (已修改) "範圍回補" 的背景執行緒，
+    (新) 會更新 BACKFILL_STATUS 全域變數
+    """
+    global BACKFILL_STATUS
+    
+    with app.app_context():
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            
+            if start_date > end_date:
+                print("[Range Backfill] Error: Start date is after end date.")
+                BACKFILL_STATUS = {"running": False, "message": "錯誤：開始日期晚於結束日期"}
+                return
+
+            print(f"[Range Backfill] Job started from {start_date_str} to {end_date_str}...")
+            
+            # (新) 初始化狀態
+            BACKFILL_STATUS = {
+                "running": True,
+                "message": f"任務已啟動..."
+            }
+            
+            current_date = start_date
+            
+            while current_date <= end_date:
+                if not BACKFILL_STATUS["running"]: # (新) 允許外部中斷 (雖然目前沒做中斷按鈕)
+                    print("[Range Backfill] Job aborted.")
+                    break
+                    
+                if current_date.weekday() >= 5:
+                    print(f"[Range Backfill] Skipping {current_date} (Weekend)")
+                else:
+                    msg = f"正在處理 {current_date}..."
+                    print(f"[Range Backfill] {msg}")
+                    BACKFILL_STATUS["message"] = msg
+                    
+                    try:
+                        _run_backfill_for_single_date(current_date)
+                        print(f"[Range Backfill] Successfully processed {current_date}.")
+                    except Exception as e:
+                        print(f"[Range Backfill] ERROR processing {current_date}: {e}")
+                    
+                    print(f"[Range Backfill] Waiting 6.1s to respect TWSE rate limit...")
+                    import time as time_module
+                    time_module.sleep(6.1)
+                
+                current_date += timedelta(days=1)
+            
+            print("[Range Backfill] Job finished.")
+            BACKFILL_STATUS = {"running": False, "message": f"回補完成"}
+        
+        except Exception as e:
+            print(f"[Range Backfill] FATAL ERROR: {e}")
+            BACKFILL_STATUS = {"running": False, "message": f"嚴重錯誤: {e}"}
+
+
+@app.route('/api/backfill_status', methods=['GET'])
+def get_backfill_status():
+    """
+    (新) 獲取目前的回補任務狀態
+    """
+    global BACKFILL_STATUS
+    return jsonify(BACKFILL_STATUS)
+
+@app.route('/api/backfill_range', methods=['POST'])
+def backfill_range():
+    """
+    (新)
+    手動觸發 "範圍回補" 歷史資料
+    """
+    data = request.json
+    start_date_str = data.get('start_date')
+    end_date_str = data.get('end_date')
+
+    if not start_date_str or not end_date_str:
+        return jsonify({"status": "error", "message": "Missing start_date or end_date"}), 400
+
+    try:
+        # 簡單驗證格式
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+        
+        if start_date > end_date:
+            return jsonify({"status": "error", "message": "Start date cannot be after end date"}), 400
+        
+        num_days = (end_date - start_date).days + 1
+
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid date format. Use YYYY-MM-DD."}), 400
+
+    # (重要) 啟動背景執行緒
+    # 我們傳遞 'app._get_current_object()' 來確保執行緒能正確取得 app context
+    thread = Thread(target=_execute_range_backfill, args=(
+        current_app._get_current_object(), # <-- 修正點 
+        start_date_str, 
+        end_date_str
+    ))
+    thread.daemon = True # 允許主程式退出
+    thread.start()
+
+    print(f"Starting range backfill thread for {num_days} days...")
+    
+    # (重要) 立即回傳 202 Accepted
     return jsonify({
-        "status": "success",
-        "date": date_str,
-        "snapshot": snapshot_data
-    })
+        "status": "success", 
+        "message": f"Range backfill job started for {num_days} days (from {start_date_str} to {end_date_str}). Check server logs for progress."
+    }), 202
+
+@app.route('/api/delete_history', methods=['POST'])
+def delete_history():
+    """
+    刪除指定日期的歷史資料
+    需要一個 'date' 參數，格式為 'YYYY-MM-DD'
+    """
+    data = request.json
+    date_str = data.get('date')
+    if not date_str:
+        return jsonify({"status": "error", "message": "Missing date parameter"}), 400
+
+    try:
+        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid date format. Use YYYY-MM-DD."}), 400
+
+    try:
+        conn = get_db_conn()
+        cursor = conn.cursor()
+        
+        # 檢查資料是否存在
+        cursor.execute("SELECT COUNT(*) FROM daily_history WHERE date = ?", (date_str,))
+        count = cursor.fetchone()[0]
+        
+        if count == 0:
+            conn.close()
+            return jsonify({"status": "error", "message": f"No data found for date {date_str}"}), 404
+            
+        # 刪除指定日期的資料
+        cursor.execute("DELETE FROM daily_history WHERE date = ?", (date_str,))
+        conn.commit()
+        conn.close()
+        
+        print(f"[Delete History] Data for {date_str} deleted successfully.")
+        return jsonify({"status": "success", "message": f"Data for {date_str} deleted successfully."})
+        
+    except Exception as e:
+        print(f"Error deleting history data: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 
 @app.route('/api/trigger_snapshot', methods=['POST'])
 def trigger_snapshot():

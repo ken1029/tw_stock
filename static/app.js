@@ -2,10 +2,8 @@
 let fetchInterval;
 const UPDATE_INTERVAL = 5000;
 let isFetching = false;
+let backfillPollInterval = null;
 const loadingSpinner = document.getElementById('loading-spinner');
-const retryStatus = document.getElementById('retry-status');
-const retryProgressBar = document.getElementById('retry-progress-bar');
-const retryCount = document.getElementById('retry-count');
 let stockModal = null;
 let currentPortfolioData = [];
 let historyChart = null;
@@ -42,6 +40,14 @@ const percentFormatter = new Intl.NumberFormat('zh-TW', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
 });
+
+// (新) 產生資料來源的標籤
+function getSourceBadge(source) {
+    if (source === 'MIS') return '<span class="badge bg-source-mis">MIS</span>';
+    if (source === 'Sina') return '<span class="badge bg-source-sina">Sina</span>';
+    if (source === 'yfinance') return '<span class="badge bg-source-yf">yfinance</span>';
+    return '<span class="badge bg-source-na">N/A</span>';
+}
 
 function getPlClass(value) {
     if (value > 0) return 'text-danger'; 
@@ -133,22 +139,12 @@ async function fetchWithRetry(url, options = {}, attempt = 0) {
             if (attempt < MAX_RETRIES) {
                 console.log(`Retrying fetch ${url} due to timeout... (${attempt + 1}/${MAX_RETRIES})`);
                 
-                // 更新重試狀態顯示
-                if (retryStatus) {
-                    retryStatus.style.display = 'flex';
-                    retryCount.textContent = `${attempt + 1}/${MAX_RETRIES}`;
-                    retryProgressBar.style.width = `${((attempt + 1) / MAX_RETRIES) * 100}%`;
-                }
-                
                 // 設置延遲後重試
                 await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
                 return await fetchWithRetry(url, options, attempt + 1);
             } else {
                 // 重試次數已用盡，顯示錯誤訊息
                 console.error(`Max retries exceeded due to timeout for ${url}.`);
-                
-                // 隱藏重試狀態
-                if (retryStatus) retryStatus.style.display = 'none';
                 
                 throw new Error("請求超時，無法加載數據");
             }
@@ -158,22 +154,12 @@ async function fetchWithRetry(url, options = {}, attempt = 0) {
             if (attempt < MAX_RETRIES) {
                 console.log(`Retrying fetch ${url}... (${attempt + 1}/${MAX_RETRIES})`);
                 
-                // 更新重試狀態顯示
-                if (retryStatus) {
-                    retryStatus.style.display = 'flex';
-                    retryCount.textContent = `${attempt + 1}/${MAX_RETRIES}`;
-                    retryProgressBar.style.width = `${((attempt + 1) / MAX_RETRIES) * 100}%`;
-                }
-                
                 // 設置延遲後重試
                 await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
                 return await fetchWithRetry(url, options, attempt + 1);
             } else {
                 // 重試次數已用盡，顯示錯誤訊息
                 console.error(`Max retries exceeded for ${url}.`);
-                
-                // 隱藏重試狀態
-                if (retryStatus) retryStatus.style.display = 'none';
                 
                 // 如果是 HTTP 錯誤，嘗試獲取伺服器返回的錯誤訊息
                 if (error.message.startsWith('Network response was not ok')) {
@@ -201,9 +187,6 @@ async function fetchPortfolio() {
         const data = await response.json();
         updateTotals(data.totals);
         updateTable(data.stocks);
-        
-        // 成功獲取資料後隱藏重試狀態
-        if (retryStatus) retryStatus.style.display = 'none';
     } catch (error) {
         console.error('Error fetching portfolio:', error);
         stopFetching();
@@ -423,7 +406,7 @@ function updateTable(stocks) {
         if (!tableBody.querySelector('.empty-row')) {
             tableBody.innerHTML = `
                 <tr class="empty-row">
-                    <td colspan="14" class="text-center p-5">
+                    <td colspan="15" class="text-center p-5">
                         <div class="empty-state-container">
                             <i class="bi bi-clipboard-data" style="font-size: 3rem; color: var(--muted-text);"></i>
                             <h4 class="mt-3">尚未新增任何持股</h4>
@@ -551,6 +534,7 @@ function createRow(stock, oldStockData) {
     `;
     
     row.innerHTML = `
+        <td data-key="data_source"></td>
         <td data-key="ticker"></td>
         <td data-key="name"></td>
         <td data-key="shares"></td>
@@ -592,7 +576,7 @@ function createStockChartContainer(ticker) {
     container.classList.add('stock-chart-row');
     container.dataset.ticker = `${ticker}-chart`;
     container.innerHTML = `
-        <td colspan="14" class="p-0">
+        <td colspan="15" class="p-0">
             <div class="collapse" id="chart-collapse-${ticker}">
                 <div class="card card-body border-top-0 rounded-0">
                     <canvas id="stock-chart-${ticker}"></canvas>
@@ -833,6 +817,7 @@ function renderStockChart(ticker, historyData) {
 function updateRowContent(row, stock, oldStockData) {
     const priceChangeClass = getChangeClass(stock.current_price, oldStockData.current_price);
     const todayPlFlashClass = getChangeClass(stock.today_pl, oldStockData.today_pl);
+    const sourceBadge = getSourceBadge(stock.data_source); // <--- (新) 加入這行
     const marketValueFlashClass = getChangeClass(stock.market_value, oldStockData.market_value);
     const todayPlClass = getPlClass(stock.today_pl);
     const totalPlClass = getPlClass(stock.pl);
@@ -843,6 +828,7 @@ function updateRowContent(row, stock, oldStockData) {
         }`;
 
     // --- 只更新有變動的內容 ---
+    updateCell(row, 'data_source', sourceBadge); // <--- (新) 加入這行
     updateCell(row, 'ticker', tickerDisplay);
     updateCell(row, 'name', stock.name);
     updateCell(row, 'shares', stock.shares.toLocaleString());
@@ -1202,10 +1188,6 @@ async function trySaveWithRetry(url, method, data) {
         fetchHistorySummary();
     } catch (error) {
         console.error('Error saving stock:', error);
-        
-        // 隱藏重試狀態
-        if (retryStatus) retryStatus.style.display = 'none';
-        
         alert(`儲存失敗: ${error.message}`);
     }
 }
@@ -1248,9 +1230,6 @@ async function showHistoricalDataRange() {
         
         if (data.daily && Object.keys(data.daily).length > 0) {
             historicalDailyData = data.daily;
-            
-            // 成功獲取資料後隱藏重試狀態
-            if (retryStatus) retryStatus.style.display = 'none';
         } else {
             throw new Error('歷史資料為空');
         }
@@ -1353,7 +1332,7 @@ async function showHistoricalDataRange() {
         // 顯示結果
         const message = `查詢區間 <strong>${actualStartDateStr}</strong> 至 <strong>${actualEndDateStr}</strong> (${performanceLabel}):<br>
                        <h4 class="mb-0">${currencyFormatter.format(startValue)} → ${currencyFormatter.format(endValue)}</h4>`;
-                         
+                          
         const diffHtml = `
             <hr class="my-2">
             <small class="mb-0">
@@ -1371,10 +1350,6 @@ async function showHistoricalDataRange() {
         highlightChartRange(actualStartDateStr, actualEndDateStr);
     } catch (error) {
         console.error("Error in showHistoricalDataRange:", error);
-        
-        // 隱藏重試狀態
-        if (retryStatus) retryStatus.style.display = 'none';
-        
         rangeQueryResultEl.textContent = `查詢失敗: ${error.message}`;
         rangeQueryResultEl.className = 'alert alert-danger';
         rangeQueryResultEl.style.display = 'block';
@@ -1397,9 +1372,6 @@ async function showHistoricalData(event) {
         
         if (data.daily && Object.keys(data.daily).length > 0) {
             historicalDailyData = data.daily;
-            
-            // 成功獲取資料後隱藏重試狀態
-            if (retryStatus) retryStatus.style.display = 'none';
         } else {
             throw new Error('歷史資料為空');
         }
@@ -1486,10 +1458,6 @@ async function showHistoricalData(event) {
         highlightChartPoint(foundDateStr);
     } catch (error) {
         console.error("Error in showHistoricalData:", error);
-        
-        // 隱藏重試狀態
-        if (retryStatus) retryStatus.style.display = 'none';
-        
         lookupResultEl.textContent = `查詢失敗: ${error.message}`;
         lookupResultEl.className = 'alert alert-danger';
         lookupResultEl.style.display = 'block';
@@ -1533,57 +1501,6 @@ function updateSortIndicators() {
             header.removeAttribute('data-sort-direction');
         }
     });
-}
-
-// (區間查詢函式 - 讀取 .total)
-function findClosestPastData(targetDateStr, sortedDates) {
-    // 根據績效類型選擇數據
-    let getDataValue = (data) => data.total; // 默認為總績效
-    
-    switch (currentPerformanceType) {
-        case 'total':
-            getDataValue = (data) => data.total;
-            break;
-        case 'tw':
-            getDataValue = (data) => data.tw_value;
-            break;
-        case 'cn':
-            getDataValue = (data) => data.cn_value;
-            break;
-    }
-    
-    let targetDate = new Date(targetDateStr + 'T12:00:00Z');
-    for (let i = 0; i < 7; i++) {
-        let dateKey = targetDate.toISOString().split('T')[0];
-        const data = historicalDailyData[dateKey];
-        if (data) {
-            return { date: dateKey, value: getDataValue(data) };
-        }
-        targetDate.setDate(targetDate.getDate() - 1);
-    }
-    const firstDate = sortedDates[0];
-    const data = historicalDailyData[firstDate];
-    return firstDate ? { date: firstDate, value: getDataValue(data) } : { date: null, value: 0 };
-}
-function findFirstDateOfPeriod(prefix, sortedDates) {
-    // 根據績效類型選擇數據
-    let getDataValue = (data) => data.total; // 默認為總績效
-    
-    switch (currentPerformanceType) {
-        case 'total':
-            getDataValue = (data) => data.total;
-            break;
-        case 'tw':
-            getDataValue = (data) => data.tw_value;
-            break;
-        case 'cn':
-            getDataValue = (data) => data.cn_value;
-            break;
-    }
-    
-     const date = sortedDates.find(d => d.startsWith(prefix));
-     const data = historicalDailyData[date];
-     return date ? { date: date, value: getDataValue(data) } : { date: null, value: 0 };
 }
 
 // (calculateAndDisplayRange - 修改以支援 7D 選項和績效類型)
@@ -1782,7 +1699,7 @@ function setupColumnToggler() {
     const STORAGE_KEY = 'portfolio_column_visibility';
 
     // 預設隱藏的欄位
-    const defaultHidden = ['previous_close', 'chart'];
+    const defaultHidden = ['previous_close', 'chart', 'data_source'];
 
     // 1. 從 localStorage 載入設定，若無則使用預設值
     const savedSettings = JSON.parse(localStorage.getItem(STORAGE_KEY));
@@ -1884,9 +1801,6 @@ function setupColumnToggler() {
 document.addEventListener('DOMContentLoaded', () => {
     setupColumnToggler(); // <-- (新) 呼叫
     
-    // 初始化重試狀態元素
-    if (retryStatus) retryStatus.style.display = 'none';
-    
     // 設置日期輸入框的最大日期為今天
     const today = new Date().toISOString().split('T')[0];
     document.getElementById('date-lookup').max = today;
@@ -1961,53 +1875,174 @@ document.addEventListener('DOMContentLoaded', () => {
     initSettings();
     
     // 設置除錯模式按鈕事件監聽器
-    document.getElementById('backfill-btn').addEventListener('click', handleBackfill);
+    document.getElementById('backfill-range-btn').addEventListener('click', handleRangeBackfill);
+    document.getElementById('delete-btn').addEventListener('click', handleDeleteHistory);
     
     startFetching();
     fetchHistorySummary();
   });
 
+// (新) 輪詢回補狀態的函式
+async function pollBackfillStatus(gracePeriod = 0) {
+    const debugResult = document.getElementById('debug-result');
+    const messageEl = document.getElementById('debug-result-message');
+
+    try {
+        const response = await fetchWithRetry('/api/backfill_status');
+        const data = await response.json();
+        
+        console.log('[DEBUG] Backfill status data:', data); // 保留調試日誌
+        messageEl.textContent = data.message;
+        
+        if (data.running) {
+            // 任務正在執行
+            debugResult.className = 'alert alert-info'; // 顯示為藍色
+            
+            // 繼續輪詢
+            backfillPollInterval = setTimeout(pollBackfillStatus, 1500); // 1.5秒後再問一次
+        } else {
+            // 任務已停止
+            clearTimeout(backfillPollInterval);
+            backfillPollInterval = null;
+            
+            // 檢查是否在寬限期內
+            if (gracePeriod > 0) {
+                // 寬限期內，再試一次
+                messageEl.textContent = data.message + ` (等待啟動... ${gracePeriod})`;
+                backfillPollInterval = setTimeout(() => pollBackfillStatus(gracePeriod - 1), 1500);
+            } else {
+                // 根據最終訊息決定顏色
+                if (data.message.includes("錯誤") || data.message.includes("FATAL")) {
+                    debugResult.className = 'alert alert-danger';
+                } else {
+                    debugResult.className = 'alert alert-success';
+                    // 成功完成，自動重新整理歷史圖表
+                    fetchHistorySummary();
+                }
+                
+                // 讓按鈕可以再次點擊
+                document.getElementById('backfill-range-btn').disabled = false;
+            }
+        }
+    } catch (error) {
+        console.error('Error polling backfill status:', error);
+        messageEl.textContent = `輪詢狀態失敗: ${error.message}`;
+        debugResult.className = 'alert alert-danger';
+        // 停止輪詢並解鎖按鈕
+        clearTimeout(backfillPollInterval);
+        backfillPollInterval = null;
+        document.getElementById('backfill-range-btn').disabled = false;
+    }
+}
 // 處理歷史資料回補
-async function handleBackfill() {
-    const debugDate = document.getElementById('debug-date').value;
+// (修改) 處理歷史資料範圍回補
+// (修改) 處理歷史資料範圍回補
+async function handleRangeBackfill() {
+    const startDate = document.getElementById('backfill-start-date').value;
+    const endDate = document.getElementById('backfill-end-date').value;
+    const debugResult = document.getElementById('debug-result');
+    const messageEl = document.getElementById('debug-result-message');
+    const button = document.getElementById('backfill-range-btn');
+
+    // (新) 檢查是否已在執行
+    if (backfillPollInterval) {
+        alert("回補任務已在執行中，請稍候。");
+        return;
+    }
+
+    if (!startDate || !endDate) {
+        messageEl.textContent = '請選擇開始日期和結束日期';
+        debugResult.className = 'alert alert-warning';
+        debugResult.style.display = 'block';
+        return;
+    }
+
+    if (startDate > endDate) {
+        messageEl.textContent = '開始日期不能晚於結束日期';
+        debugResult.className = 'alert alert-warning';
+        debugResult.style.display = 'block';
+        return;
+    }
+
+    if (!confirm(`您確定要回補從 ${startDate} 到 ${endDate} 的歷史資料嗎？`)) {
+        return;
+    }
+    
+    try {
+        // (新) 鎖定按鈕
+        button.disabled = true;
+        
+        // (新) 初始化 UI
+        messageEl.textContent = '正在啟動回補任務...';
+        debugResult.className = 'alert alert-info';
+        debugResult.style.display = 'block';
+
+        const response = await fetchWithRetry('/api/backfill_range', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ start_date: startDate, end_date: endDate })
+        });
+        
+        const data = await response.json();
+        console.log('[DEBUG] Backfill range response:', data); // 保留調試日誌
+        
+        if (data.status === 'success') {
+            // (新) 立即開始輪詢狀態
+            pollBackfillStatus(3);
+        } else {
+            messageEl.textContent = `啟動失敗：${data.message}`;
+            debugResult.className = 'alert alert-danger';
+            button.disabled = false; // 解鎖按鈕
+        }
+    } catch (error) {
+        console.error('Error in handleRangeBackfill:', error);
+        messageEl.textContent = `啟動失敗：${error.message}`;
+        debugResult.className = 'alert alert-danger';
+        button.disabled = false; // 解鎖按鈕
+    }
+    // (移除) 'finally' 區塊中的 fetchHistorySummary()，改到 pollBackfillStatus() 成功時才觸發
+}
+
+
+// 處理歷史資料刪除
+async function handleDeleteHistory() {
+    const deleteDate = document.getElementById('delete-date').value;
     const debugResult = document.getElementById('debug-result');
     
-    if (!debugDate) {
+    if (!deleteDate) {
         debugResult.textContent = '請選擇日期';
         debugResult.className = 'alert alert-warning';
         debugResult.style.display = 'block';
         return;
     }
     
+    // 確認是否要刪除
+    if (!confirm(`您確定要刪除 ${deleteDate} 的歷史資料嗎？此操作無法復原。`)) {
+        return;
+    }
+    
     try {
         debugResult.style.display = 'none';
-        const response = await fetchWithRetry('/api/backfill_history', {
+        const response = await fetchWithRetry('/api/delete_history', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ date: debugDate })
+            body: JSON.stringify({ date: deleteDate })
         });
         
         const data = await response.json();
         
         if (data.status === 'success') {
-            debugResult.innerHTML = `歷史資料回補成功：<br>
-                日期：${data.date}<br>
-                總資產：${currencyFormatter.format(data.snapshot.total)}<br>
-                台灣股票：${currencyFormatter.format(data.snapshot.tw_value)}<br>
-                中國股票：${currencyFormatter.format(data.snapshot.cn_value)}`;
+            debugResult.textContent = `歷史資料刪除成功：${deleteDate}`;
             debugResult.className = 'alert alert-success';
-        } else if (data.status === 'skipped') {
-            debugResult.textContent = `回補跳過：${data.message}`;
-            debugResult.className = 'alert alert-warning';
         } else {
-            debugResult.textContent = `回補失敗：${data.message}`;
+            debugResult.textContent = `刪除失敗：${data.message}`;
             debugResult.className = 'alert alert-danger';
         }
     } catch (error) {
-        console.error('Error in handleBackfill:', error);
-        debugResult.textContent = `回補失敗：${error.message}`;
+        console.error('Error in handleDeleteHistory:', error);
+        debugResult.textContent = `刪除失敗：${error.message}`;
         debugResult.className = 'alert alert-danger';
     } finally {
         debugResult.style.display = 'block';
@@ -2141,11 +2176,16 @@ function applySettings(settings) {
   }
 
 // 應用除錯模式設定
+// (修改) 應用除錯模式設定
 function applyDebugMode(isEnabled) {
     const debugSection = document.getElementById('debug-section');
     if (debugSection) {
         debugSection.style.display = isEnabled ? 'block' : 'none';
     }
+    
+    // (新) 改為在 <html> 標籤上切換 CSS Class，
+    // 這樣無論 <td> 何時被建立，都能正確顯示。
+    document.documentElement.classList.toggle('debug-mode-enabled', isEnabled);
 }
 
 // 打開設定模態框
@@ -2252,57 +2292,6 @@ function initSettings() {
     const settings = loadSettings();
     applySettings(settings);
     applyDebugMode(settings.debugMode);
-    
-    // 應用閃爍通知設定
-    if (settings.enableNotifications) {
-        // 確保在初始化時檢查一次通知條件
-        setTimeout(() => {
-            const totalPlPercentElement = document.getElementById('total-pl-percent');
-            const totalPlElement = document.getElementById('total-pl');
-            if (totalPlPercentElement && totalPlElement) {
-                // 獲取當前的總報酬率
-                const plPercentText = totalPlPercentElement.textContent;
-                // 移除百分比符號並解析數值
-                const plPercent = parseFloat(plPercentText.replace('%', '')) || 0;
-                // 獲取當前的總損益值
-                const plValueText = totalPlElement.textContent;
-                const plValue = parseFloat(plValueText.replace(/[^0-9.-]/g, '')) || 0;
-                
-                checkAndTriggerNotification(plPercent, plValue);
-            }
-            
-            // 應用市值閃爍通知設定
-            const totalMarketValueElement = document.getElementById('total-market-value');
-            if (totalMarketValueElement) {
-                // 獲取當前的總市值
-                const marketValueText = totalMarketValueElement.textContent;
-                const marketValue = parseFloat(marketValueText.replace(/[^0-9.-]/g, '')) || 0;
-                checkMarketValueNotification(marketValue, 'total');
-            }
-            
-            const twMarketValueElement = document.getElementById('tw-market-value');
-            if (twMarketValueElement) {
-                // 獲取當前的台灣股票總市值
-                const twMarketValueText = twMarketValueElement.textContent;
-                const twMarketValue = parseFloat(twMarketValueText.replace(/[^0-9.-]/g, '')) || 0;
-                checkMarketValueNotification(twMarketValue, 'tw');
-            }
-            
-            const cnMarketValueElement = document.getElementById('cn-market-value');
-            if (cnMarketValueElement) {
-                // 獲取當前的中國股票總市值
-                const cnMarketValueText = cnMarketValueElement.textContent;
-                const cnMarketValue = parseFloat(cnMarketValueText.replace(/[^0-9.-]/g, '')) || 0;
-                checkMarketValueNotification(cnMarketValue, 'cn');
-            }
-        }, 1000);
-    }
-}
-
-// 初始化設定功能
-function initSettings() {
-    const settings = loadSettings();
-    applySettings(settings);
     
     // 應用閃爍通知設定
     if (settings.enableNotifications) {
