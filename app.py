@@ -546,15 +546,33 @@ def get_prices_for_date(tickers, target_date):
             yfinance_tickers.append(ticker) # 失敗，交給 yfinance 備援
 
     # 3. 處理中國股票 (.SS/.SZ)
-    print(f"[Hybrid Backfill] Querying yfinance for {len(china_tickers)} China tickers...")
-    for ticker in china_tickers:
-        # 直接使用 yfinance 的歷史價格獲取函數，它已經實現了往前查找邏輯
-        price_data = get_yfinance_prices_for_date([ticker], target_date)
-        if ticker in price_data and price_data[ticker]["price"] != 0:
-            stock_data[ticker] = {"price": price_data[ticker]["price"]}
-        else:
-            # 如果 yfinance 也無法獲取有效價格，將價格設為 0
-            stock_data[ticker] = {"price": 0}
+# (這是新的程式碼，使用 Sina 優先)
+    if china_tickers:
+       print(f"[Hybrid Backfill] Querying Sina for {len(china_tickers)} China tickers (for Snapshot)...")
+    
+       # 優先呼叫 Sina API 獲取即時 (收盤) 價
+       sina_data = get_sina_current_prices(china_tickers) #
+    
+       # 遍歷所有要求的陸股
+       for ticker in china_tickers:
+           # 檢查 Sina 是否成功回傳了這支股票
+           if ticker in sina_data and sina_data[ticker].get("price", 0) > 0:
+               # 成功：Sina 的 'price' 在 15:30 就是收盤價
+               stock_data[ticker] = {"price": sina_data[ticker].get("price")}
+    
+           else:
+               # 失敗：Sina 抓不到，降級改用 Yahoo Finance (yfinance) 作為備援
+               print(f"  -> [Hybrid Backfill] Sina failed for {ticker}, falling back to yfinance...")
+    
+               # 呼叫 yfinance 函式 (這也是原有的邏輯)
+               price_data = get_yfinance_prices_for_date([ticker], target_date) #
+    
+               if ticker in price_data and price_data[ticker].get("price", 0) != 0:
+                   stock_data[ticker] = {"price": price_data[ticker]["price"]}
+               else:
+                   # 備援也失敗
+                   print(f"  -> [Hybrid Backfill] YFinance (fallback) also failed for {ticker}.")
+                   stock_data[ticker] = {"price": 0}
 
     # 4. (修改) 處理所有其他股票 (使用 yfinance)
     if yfinance_tickers:
@@ -770,30 +788,31 @@ def save_daily_snapshot():
     with app.app_context(): 
         # (重要) 建議將排程器時間改為 18:00，以確保 TWSE 資料已發布
         print(f"\n[Scheduler] Running Daily Snapshot Job... ({datetime.now()})")
-        portfolio = load_portfolio()
-        tickers = list(set(stock['ticker'] for stock in portfolio))
+        portfolio = load_portfolio() #
+        tickers = list(set(stock['ticker'] for stock in portfolio)) #
         if not tickers:
             print("[Scheduler] No portfolio found. Skipping snapshot.")
             return
             
-        rate_cny_twd = get_cny_to_twd_rate()
+        rate_cny_twd = get_cny_to_twd_rate() #
         
-        # --- *** (唯一的修改點) *** ---
-        # 從 "即時價格" 改為抓取 "指定日期的收盤價" (會自動使用 TWSE API)
-        # prices_data = get_current_prices(tickers) # 舊的
-        prices_data = get_prices_for_date(tickers, datetime.now().date()) # 新的
+        # --- *** (這就是您需要修改的地方) *** ---
+        # (舊) prices_data = get_prices_for_date(tickers, datetime.now().date()) 
+        # (新) 改用即時API。因為快照在15:30執行，即時價=收盤價。
+        prices_data = get_current_prices(tickers) 
         # --- *** (修改結束) *** ---
         
-        total_market_value_twd = 0
-        total_tw_value = 0
-        total_cn_value = 0
+        total_market_value_twd = 0 #
+        total_tw_value = 0 #
+        total_cn_value = 0 #
         for stock in portfolio:
+            # ... (此函式的其餘部分 完全保持不變) ...
             ticker = stock['ticker']
             shares = float(stock.get('shares', 0))
             currency = stock.get("currency", "TWD") 
             
-            # 這裡的 .get('price', 0) 保持不變，因為 get_prices_for_date 的回傳結構是相容的
-            current_price_original = prices_data.get(ticker, {}).get('price', 0)
+            # 這裡的 .get('price', 0) 保持不變，因為 get_current_prices 的回傳結構是相容的
+            current_price_original = prices_data.get(ticker, {}).get('price', 0) #
             
             market_value_original = current_price_original * shares
             market_value_twd = market_value_original
@@ -813,7 +832,6 @@ def save_daily_snapshot():
         
         update_history_log(snapshot_data, datetime.now().date())
         print("[Scheduler] Snapshot job finished.")
-
 
 @app.route('/')
 def index():
@@ -1095,10 +1113,81 @@ def get_stock_history(ticker):
         print(f"Error fetching stock history: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+def get_prices_for_date_yahoo_only(tickers, target_date):
+    """
+    (新) 為了簡化回補邏輯，此函式 *只* 使用 yfinance 抓取 *所有* 股票。
+    它會嚴格抓取 'target_date' 當天的收盤價。
+    如果 'target_date' 當天無資料（休市），則回傳 0。
+    (此版本 *移除* 了 yfinance 往前 14 天查找的備援邏輯)
+    """
+    if not tickers:
+        return {}
+    
+    # yfinance 抓取需要一個區間
+    start_date = target_date
+    end_date = target_date + timedelta(days=1)
+    
+    print(f"[Backfill Yahoo Only] Fetching historical prices for {target_date.strftime('%Y-%m-%d')} for tickers: {' '.join(tickers)}")
+    
+    try:
+        hist_data = yf.download(
+            ' '.join(tickers),
+            start=start_date,
+            end=end_date,
+            interval="1d",
+            group_by='ticker',
+            progress=False # 關閉下載進度條
+        )
+    except Exception as e:
+        print(f"[Backfill Yahoo Only] yf.download FAILED: {e}")
+         # 如果 yf.download 本身失敗，為所有股票回傳 0
+        return {ticker: {"price": 0} for ticker in tickers}
+
+    stock_data = {}
+    for ticker in tickers:
+        try:
+            price_series = None
+            
+            # 處理 yf.download 在不同情況下的回傳結構
+            if len(tickers) == 1:
+                # 情況1: 只查詢一支股票
+                if hist_data.empty:
+                    price_series = pd.Series(dtype=float) # 建立空的 Series
+                else:
+                    price_series = hist_data['Close']
+            else:
+                # 情況2: 查詢多支股票
+                if ticker not in hist_data or hist_data[ticker].empty:
+                     price_series = pd.Series(dtype=float) # 建立空的 Series
+                else:
+                    price_series = hist_data[ticker]['Close']
+
+            price_found = False
+            if price_series is not None and not price_series.empty:
+                # 獲取該日期的收盤價 (iloc[0] 應該就是 start_date)
+                price = price_series.iloc[0] 
+                if not pd.isna(price) and price > 0: 
+                    stock_data[ticker] = {"price": price}
+                    price_found = True
+
+            if not price_found:
+                 # (*** 關鍵變更 ***)
+                 # 找不到 'target_date' 當天的資料（休市或錯誤）
+                 # 我們*不再*往前查找，直接回傳 0
+                 # print(f"  -> [Backfill Yahoo Only] No data for {ticker} on {target_date.strftime('%Y-%m-%d')}. Returning 0.")
+                 stock_data[ticker] = {"price": 0}
+
+        except Exception as e:
+            print(f"[Backfill Yahoo Only] Error processing {ticker}: {e}")
+            stock_data[ticker] = {"price": 0}
+            
+    return stock_data
+
 def _run_backfill_for_single_date(target_date):
     """
-    (新) 執行單日回補的核心邏輯
-    這假設它在一個 Flask app context 中被呼叫
+    (已重寫) 執行單日回補的核心邏輯。
+    - 使用 'get_prices_for_date_strict' 嚴格獲取當天價格。
+    - 獨立檢查 'tw_value' 和 'cn_value'，如果任一為 0，則 *僅* 回填該市場。
     """
     print(f"\n[Backfill Logic] Running job for {target_date}...")
     
@@ -1106,13 +1195,14 @@ def _run_backfill_for_single_date(target_date):
     tickers = list(set(stock['ticker'] for stock in portfolio))
     if not tickers:
         print("[Backfill Logic] No portfolio found. Skipping.")
-        # 回傳一個可識別的「跳過」狀態
         return {"status": "skipped", "message": "No portfolio found."}, None, None
 
     rate_cny_twd = get_cny_to_twd_rate()
-    prices_data = get_prices_for_date(tickers, target_date)
+    
+    # (*** 變更點 1: 使用新的嚴格抓取函式 ***)
+    # 這個函式只會抓 'target_date' 當天的價格，如果休市或失敗則回傳 0
+    prices_data = get_prices_for_date_yahoo_only(tickers, target_date) 
 
-    total_market_value_twd = 0
     total_tw_value = 0
     total_cn_value = 0
     detailed_info = []
@@ -1121,19 +1211,23 @@ def _run_backfill_for_single_date(target_date):
         ticker = stock['ticker']
         shares = float(stock.get('shares', 0))
         currency = stock.get("currency", "TWD")
-        close_price_original = prices_data.get(ticker, {}).get('price', 0)
+        
+        # 'price' 可能是 0 (如果當天休市或抓取失敗)
+        close_price_original = prices_data.get(ticker, {}).get('price', 0) 
         
         market_value_original = close_price_original * shares
         market_value_twd = market_value_original
         if currency == "CNY":
             market_value_twd *= rate_cny_twd
-            
-        total_market_value_twd += market_value_twd
+        
+        # (*** 變更點 2: 分開累計市值 ***)
+        # 我們只關心 TWD 和 CNY
         if currency == "TWD":
             total_tw_value += market_value_twd
         elif currency == "CNY":
             total_cn_value += market_value_twd
-            
+        # (其他貨幣如 USD 暫不計入 tw_value 或 cn_value)
+
         detailed_info.append({
             "ticker": ticker, "name": stock.get("name", ticker), "shares": shares,
             "currency": currency, "close_price_original": round(close_price_original, 4),
@@ -1141,37 +1235,63 @@ def _run_backfill_for_single_date(target_date):
             "market_value_twd": round(market_value_twd, 4),
             "rate_used": rate_cny_twd if currency == "CNY" else 1.0
         })
+    
+    # (*** 變更點 3: 獨立的回填 (Backfill) 邏輯 ***)
+    
+    # 這是 'target_date' 當天計算出來的 "原始" 市值
+    final_tw_value = round(total_tw_value, 4)
+    final_cn_value = round(total_cn_value, 4)
+    
+    # 檢查是否需要從 "前一天" 繼承數據
+    # 只要任一市場為 0，就觸發檢查
+    if final_tw_value == 0 or final_cn_value == 0:
+        print(f"[Backfill Logic] '{target_date}' TW or CN market value is 0. Fetching previous day data...")
+        
+        # 撈取 'target_date' 之前的 *最後一筆* 有效資料
+        previous_day_data = get_previous_day_data(target_date) #
+        
+        if previous_day_data:
+            print(f"[Backfill Logic] Found previous data from {previous_day_data['date']}")
             
+            # 獨立判斷 (A): 如果 'target_date' 的台股市值為 0 (例如休市)，則使用前一天的台股市值
+            if final_tw_value == 0:
+                final_tw_value = previous_day_data.get("tw_value", 0)
+                print(f"  -> [Backfill] Using previous TW value: {final_tw_value}")
+            else:
+                # (例如台股開市，但陸股休市)
+                print(f"  -> [Backfill] Using 'target_date' TW value: {final_tw_value}")
+
+            # 獨立判斷 (B): 如果 'target_date' 的陸股市值為 0 (例如休市)，則使用前一天的陸股市值
+            if final_cn_value == 0:
+                final_cn_value = previous_day_data.get("cn_value", 0)
+                print(f"  -> [Backfill] Using previous CN value: {final_cn_value}")
+            else:
+                # (例如陸股開市，但台股休市)
+                print(f"  -> [Backfill] Using 'target_date' CN value: {final_cn_value}")
+                
+        else:
+            # 這是歷史記錄的第一天，找不到更早的資料
+            print(f"[Backfill Logic] No previous day data found for {target_date}. Using 0.")
+    else:
+         print(f"[Backfill Logic] Both TW and CN values are non-zero for '{target_date}'. No backfill needed.")
+
+    # (*** 變更點 4: 儲存最終結果 ***)
+    
+    # 總市值 = (可能被回填的台股) + (可能被回填的陸股)
+    final_total = round(final_tw_value + final_cn_value, 4)
+    
     snapshot_data = {
-        "total": round(total_market_value_twd, 4),
-        "tw_value": round(total_tw_value, 4),
-        "cn_value": round(total_cn_value, 4)
+        "total": final_total,
+        "tw_value": final_tw_value,
+        "cn_value": final_cn_value
     }
     
-    # 檢查當天台灣股票總市值是否為0，如果是則使用前一天的台灣股票資料
-    # 檢查當天中國股票總市值是否為0，如果是則使用前一天的中國股票資料
-    if snapshot_data["tw_value"] == 0 or snapshot_data["cn_value"] == 0:
-        print(f"[Backfill Logic] TW or CN market value is 0 for {target_date}, checking previous day data...")
-        previous_day_data = get_previous_day_data(target_date)
-        if previous_day_data:
-            # 只替換為0的部分，而不是全部替換
-            if snapshot_data["tw_value"] == 0:
-                print(f"[Backfill Logic] Using previous day TW data from {previous_day_data['date']}")
-                snapshot_data["tw_value"] = previous_day_data["tw_value"]
-            
-            if snapshot_data["cn_value"] == 0:
-                print(f"[Backfill Logic] Using previous day CN data from {previous_day_data['date']}")
-                snapshot_data["cn_value"] = previous_day_data["cn_value"]
-                
-            # 重新計算總市值
-            snapshot_data["total"] = round(snapshot_data["tw_value"] + snapshot_data["cn_value"], 4)
-        else:
-            print(f"[Backfill Logic] No previous day data found for {target_date}")
-    
-    update_history_log(snapshot_data, target_date)
+    # 使用 INSERT OR REPLACE 儲存或覆蓋
+    update_history_log(snapshot_data, target_date) #
     
     print(f"[Backfill Logic] Job for {target_date} finished.")
-    # 回傳結果供 API 使用
+    
+    # 回傳結果供 API 顯示
     return snapshot_data, detailed_info, rate_cny_twd
 
 @app.route('/api/backfill_history', methods=['POST'])
