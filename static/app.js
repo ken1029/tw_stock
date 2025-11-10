@@ -2339,4 +2339,83 @@ function initSettings() {
     }
 }
 
+// --- 除錯訊息功能 ---
+let debugMessagesInterval = null;
+
+// 開始輪詢除錯訊息
+function startDebugMessagesPolling() {
+    // 先立即獲取一次除錯訊息
+    fetchDebugMessages();
+    
+    // 每2秒輪詢一次除錯訊息
+    debugMessagesInterval = setInterval(fetchDebugMessages, 2000);
+}
+
+// 停止輪詢除錯訊息
+function stopDebugMessagesPolling() {
+    if (debugMessagesInterval) {
+        clearInterval(debugMessagesInterval);
+        debugMessagesInterval = null;
+    }
+}
+
+// 獲取除錯訊息
+async function fetchDebugMessages() {
+    try {
+        const response = await fetch('/api/debug_messages');
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            updateDebugConsole(data.messages);
+        }
+    } catch (error) {
+        console.error('Error fetching debug messages:', error);
+    }
+}
+
+// 更新除錯控制台
+function updateDebugConsole(messages) {
+    const debugConsole = document.getElementById('debug-console');
+    if (!debugConsole) return;
+    
+    // 清空控制台
+    debugConsole.innerHTML = '';
+    
+    // 添加每條訊息
+    messages.forEach(message => {
+        const messageElement = document.createElement('div');
+        messageElement.className = 'debug-message';
+        messageElement.textContent = message;
+        debugConsole.appendChild(messageElement);
+    });
+    
+    // 滾動到底部
+    debugConsole.scrollTop = debugConsole.scrollHeight;
+}
+
+// (修改) 應用除錯模式設定
+function applyDebugMode(isEnabled) {
+    const debugSection = document.getElementById('debug-section');
+    if (debugSection) {
+        debugSection.style.display = isEnabled ? 'block' : 'none';
+    }
+    
+    // 控制除錯訊息控制台的顯示
+    const debugConsoleContainer = document.getElementById('debug-console-container');
+    if (debugConsoleContainer) {
+        debugConsoleContainer.style.display = isEnabled ? 'block' : 'none';
+    }
+    
+    // 如果啟用除錯模式，開始輪詢除錯訊息
+    if (isEnabled) {
+        startDebugMessagesPolling();
+    } else {
+        // 如果停用除錯模式，停止輪詢除錯訊息
+        stopDebugMessagesPolling();
+    }
+    
+    // (新) 改為在 <html> 標籤上切換 CSS Class，
+    // 這樣無論 <td> 何時被建立，都能正確顯示。
+    document.documentElement.classList.toggle('debug-mode-enabled', isEnabled);
+}
 

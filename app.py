@@ -9,14 +9,48 @@ import re # (新) 匯入 re
 from time import time as timestamp
 import sqlite3 # (新) 匯入 sqlite
 from threading import Thread # (新) 匯入 Thread
-
-from apscheduler.schedulers.background import BackgroundScheduler
+from collections import deque
+import logging
 
 
 BACKFILL_STATUS = {
     "running": False,
     "message": "尚未開始"
 }
+
+# Initialize debug message storage
+DEBUG_MESSAGES = deque(maxlen=100)  # Store up to 100 debug messages
+
+# Custom print function to capture debug messages
+original_print = print
+def debug_print(*args, **kwargs):
+    # Capture the message
+    message = ' '.join(str(arg) for arg in args)
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    debug_entry = f"[{timestamp}] {message}"
+    
+    # Add to debug message buffer
+    DEBUG_MESSAGES.append(debug_entry)
+    
+    # Call original print function
+    original_print(*args, **kwargs)
+
+# Override the built-in print function
+import builtins
+builtins.print = debug_print
+
+# Custom logging handler to capture log messages
+class DebugMessageHandler(logging.Handler):
+    def emit(self, record):
+        log_entry = self.format(record)
+        DEBUG_MESSAGES.append(log_entry)
+
+# Set up logging to use our custom handler
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+debug_handler = DebugMessageHandler()
+debug_handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s'))
+logger.addHandler(debug_handler)
 
 app = Flask(__name__)
 
@@ -1367,6 +1401,18 @@ def trigger_snapshot():
     except Exception as e:
         print(f"Error triggering snapshot: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/debug_messages', methods=['GET'])
+def get_debug_messages():
+    """
+    獲取最新的除錯訊息
+    """
+    # Convert deque to list for JSON serialization
+    messages = list(DEBUG_MESSAGES)
+    return jsonify({
+        "status": "success",
+        "messages": messages
+    })
 
 if __name__ == '__main__':
     print("Starting Flask app...")
