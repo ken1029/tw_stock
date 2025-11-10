@@ -253,11 +253,67 @@ def get_mis_tw_prices(tickers):
             if prev_close == "-" or prev_close == "": prev_close = "0"
                 
             if float(current_price) == 0:
-                open_price = stock.get("o", "0")
-                if open_price != "0" and open_price != "-":
-                    current_price = open_price
+                # 新增從 a/b 欄位提取第一個數值的邏輯
+                # 嘗試從 a 欄位取得第一個數值
+                a_field = stock.get("a", "")
+                if a_field and a_field != "-":
+                    try:
+                        # 分離第一個數值
+                        first_a_value = a_field.split("_")[0]
+                        if first_a_value and float(first_a_value) > 0:
+                            current_price = first_a_value
+                        else:
+                            raise ValueError("First a value is zero or invalid")
+                    except (ValueError, IndexError):
+                        # 如果 a 欄位無法取得有效值，嘗試從 b 欄位取得
+                        b_field = stock.get("b", "")
+                        if b_field and b_field != "-":
+                            try:
+                                # 分離第一個數值
+                                first_b_value = b_field.split("_")[0]
+                                if first_b_value and float(first_b_value) > 0:
+                                    current_price = first_b_value
+                                else:
+                                    raise ValueError("First b value is zero or invalid")
+                            except (ValueError, IndexError):
+                                # 如果 a/b 欄位都無法取得有效值，使用開盤價或昨收價
+                                open_price = stock.get("o", "0")
+                                if open_price != "0" and open_price != "-":
+                                    current_price = open_price
+                                else:
+                                    current_price = prev_close
+                        else:
+                            # 如果 b 欄位為空，使用開盤價或昨收價
+                            open_price = stock.get("o", "0")
+                            if open_price != "0" and open_price != "-":
+                                current_price = open_price
+                            else:
+                                current_price = prev_close
                 else:
-                    current_price = prev_close
+                    # 如果 a 欄位為空，嘗試從 b 欄位取得
+                    b_field = stock.get("b", "")
+                    if b_field and b_field != "-":
+                        try:
+                            # 分離第一個數值
+                            first_b_value = b_field.split("_")[0]
+                            if first_b_value and float(first_b_value) > 0:
+                                current_price = first_b_value
+                            else:
+                                raise ValueError("First b value is zero or invalid")
+                        except (ValueError, IndexError):
+                            # 如果 b 欄位無法取得有效值，使用開盤價或昨收價
+                            open_price = stock.get("o", "0")
+                            if open_price != "0" and open_price != "-":
+                                current_price = open_price
+                            else:
+                                current_price = prev_close
+                    else:
+                        # 如果 b 欄位也為空，使用開盤價或昨收價
+                        open_price = stock.get("o", "0")
+                        if open_price != "0" and open_price != "-":
+                            current_price = open_price
+                        else:
+                            current_price = prev_close
 
             stock_data[yfinance_key] = {
                 "price": float(current_price),
