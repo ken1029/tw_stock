@@ -12,12 +12,6 @@ from threading import Thread # (新) 匯入 Thread
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-# (新) 從環境變數讀取 TWSE API 金鑰
-TWSE_APP_ID = os.environ.get('TWSE_APP_ID')
-TWSE_APP_SECRET = os.environ.get('TWSE_APP_SECRET')
-
-# (新) TWSE Token 的快取
-TWSE_TOKEN_CACHE = {"token": None, "expires_at": 0}
 
 BACKFILL_STATUS = {
     "running": False,
@@ -501,7 +495,7 @@ def get_yfinance_prices_for_date(tickers, target_date):
 def get_prices_for_date(tickers, target_date):
     """
     (已修改) 簡化混合：獲取指定日期的收盤價
-    - .TW 股票: 優先使用 TWSE OpenAPI
+    - .TW 股票: 使用 yfinance
     - 其他股票 (包含 .SS/.SZ 及備援): 使用 yfinance
     """
     if not tickers:
@@ -509,26 +503,14 @@ def get_prices_for_date(tickers, target_date):
     
     print(f"\n[Hybrid Backfill] Getting prices for {target_date.strftime('%Y-%m-%d')}")
     
-    token = get_twse_token() if (TWSE_APP_ID and TWSE_APP_SECRET) else None
-    if token:
-        print("[Hybrid Backfill] TWSE Token acquired.")
-    else:
-        print("[Hybrid Backfill] TWSE Token not found. Using yfinance for .TW stocks.")
-        
     target_date_str = target_date.strftime('%Y-%m-%d')
     
     # 1. 分離 Tickers
-    tw_tickers = []
     china_tickers = []
     yfinance_tickers = []
     
     for t in tickers:
-        if (t.endswith('.TW') or t.endswith('.TWO')) and token:
-            tw_tickers.append(t)
-        elif (t.endswith('.TW') or t.endswith('.TWO')) and not token:
-            # 如果沒有 TWSE token，將 .TW/.TWO 股票交給 yfinance
-            yfinance_tickers.append(t)
-        elif t.endswith('.SS') or t.endswith('.SZ'):
+        if t.endswith('.SS') or t.endswith('.SZ'):
             # 將中國股票單獨分離出來
             china_tickers.append(t)
         else:
@@ -536,16 +518,7 @@ def get_prices_for_date(tickers, target_date):
             
     stock_data = {}
     
-    # 2. 處理 .TW 股票 (使用 TWSE OpenAPI with backfill)
-    print(f"[Hybrid Backfill] Querying TWSE API for {len(tw_tickers)} tickers...")
-    for ticker in tw_tickers:
-        price = get_twse_price_for_date_with_backfill(ticker, target_date_str, token)
-        if price is not None:
-            stock_data[ticker] = {"price": price}
-        else:
-            yfinance_tickers.append(ticker) # 失敗，交給 yfinance 備援
-
-    # 3. 處理中國股票 (.SS/.SZ)
+    # 2. 處理中國股票 (.SS/.SZ)
 # (這是新的程式碼，使用 Sina 優先)
     if china_tickers:
        print(f"[Hybrid Backfill] Querying Sina for {len(china_tickers)} China tickers (for Snapshot)...")
@@ -574,13 +547,13 @@ def get_prices_for_date(tickers, target_date):
                    print(f"  -> [Hybrid Backfill] YFinance (fallback) also failed for {ticker}.")
                    stock_data[ticker] = {"price": 0}
 
-    # 4. (修改) 處理所有其他股票 (使用 yfinance)
+    # 3. (修改) 處理所有其他股票 (使用 yfinance)
     if yfinance_tickers:
         print(f"[Hybrid Backfill] Calling yfinance fallback for {len(yfinance_tickers)} tickers...")
         yfinance_data = get_yfinance_prices_for_date(yfinance_tickers, target_date)
         stock_data.update(yfinance_data)
         
-    # 5. 最終檢查
+    # 4. 最終檢查
     for ticker in tickers:
         if ticker not in stock_data:
             print(f"Warning: No price data found for {ticker} from any source.")
@@ -588,18 +561,7 @@ def get_prices_for_date(tickers, target_date):
         elif stock_data[ticker].get("price", 0) == 0:
             # 如果價格為 0，嘗試往前查找
             print(f"Warning: Price is 0 for {ticker} on {target_date_str}, attempting backfill...")
-            if ticker.endswith('.TW') or ticker.endswith('.TWO'):
-                # 台股使用 TWSE API 往前查找
-                if token:
-                    price = get_twse_price_for_date_with_backfill(ticker, target_date_str, token)
-                    if price is not None:
-                        stock_data[ticker] = {"price": price}
-                else:
-                    # 沒有 token 時，使用 yfinance 往前查找
-                    price_data = get_yfinance_prices_for_date([ticker], target_date)
-                    if ticker in price_data:
-                        stock_data[ticker] = price_data[ticker]
-            elif ticker.endswith('.SS') or ticker.endswith('.SZ'):
+            if ticker.endswith('.SS') or ticker.endswith('.SZ'):
                 # 中國股票使用 yfinance 往前查找
                 price_data = get_yfinance_prices_for_date([ticker], target_date)
                 if ticker in price_data and price_data[ticker]["price"] != 0:
@@ -612,149 +574,6 @@ def get_prices_for_date(tickers, target_date):
                     stock_data[ticker] = price_data[ticker]
             
     return stock_data
-
-def get_twse_token():
-    """
-    (新) 獲取 TWSE OpenAPI 的 Bearer Token
-    """
-    global TWSE_TOKEN_CACHE
-    now = timestamp()
-
-    # 檢查快取
-    if TWSE_TOKEN_CACHE["token"] and now < TWSE_TOKEN_CACHE["expires_at"]:
-        print("[TWSE API] Using cached token")
-        return TWSE_TOKEN_CACHE["token"]
-
-    if not TWSE_APP_ID or not TWSE_APP_SECRET:
-        print("[TWSE API] Error: TWSE_APP_ID or TWSE_APP_SECRET is not set.")
-        return None
-
-    token_url = "https://openapi.twse.com.tw/auth"
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-    data = {
-        "grant_type": "client_credentials",
-        "client_id": TWSE_APP_ID,
-        "client_secret": TWSE_APP_SECRET
-    }
-    
-    try:
-        print("[TWSE API] Fetching new token...")
-        res = requests.post(token_url, headers=headers, data=data)
-        res.raise_for_status()
-        token_data = res.json()
-        
-        access_token = token_data.get("access_token")
-        expires_in = token_data.get("expires_in", 3600) # 預設1小時
-        
-        TWSE_TOKEN_CACHE["token"] = access_token
-        # 提早 5 分鐘失效，增加保險
-        TWSE_TOKEN_CACHE["expires_at"] = now + expires_in - 300 
-        
-        print(f"[TWSE API] Got new token, expires in {expires_in}s")
-        return access_token
-        
-    except Exception as e:
-        print(f"[TWSE API] Error getting token: {e}")
-        return None
-
-def get_twse_price_for_date(stock_code, target_date_str, token):
-    """
-    (新) 使用 TWSE OpenAPI 獲取指定日期的收盤價
-    stock_code: '2330.TW' or '0050.TW' or 'XXXX.TWO'
-    target_date_str: 'YYYY-MM-DD'
-    """
-    
-    # 1. 處理 Ticker 格式 (e.g., '2330.TW' -> '2330')
-    if stock_code.endswith(".TW") or stock_code.endswith(".TWO"):
-        stock_code_digits = stock_code.split('.')[0]
-    else:
-        # 如果格式不符，可能不是 TWSE 股票
-        return None
-    
-    # 2. 處理日期格式 (e.g., '2025-11-08' -> '20251108')
-    date_yyyymmdd = target_date_str.replace('-', '')
-    
-    api_url = f"https://openapi.twse.com.tw/api/v1/exchangeReport/STOCK_DAY"
-    params = {
-        "date": date_yyyymmdd,
-        "stockCode": stock_code_digits,
-        "response": "JSON" # 確保回傳 JSON
-    }
-    headers = {
-        "Authorization": f"Bearer {token}"
-    }
-    
-    try:
-        res = requests.get(api_url, headers=headers, params=params)
-        res.raise_for_status()
-        data = res.json()
-        
-        # (重要) 檢查 TWSE API 是否回傳成功
-        if data.get("resultCode") != "0000":
-            # resultCode '2001' 通常是 '查無資料' (例如假日或尚未開盤)
-            if data.get("resultCode") != "2001":
-                 print(f"[TWSE API] Error for {stock_code} on {date_yyyymmdd}: {data.get('resultMessage')}")
-            return None
-
-        # (重要) 檢查 data 欄位
-        api_data = data.get("data")
-        if not api_data:
-            # print(f"[TWSE API] No data found for {stock_code} on {date_yyyymmdd}. (Holiday or non-trading day?)")
-            return None
-        
-        # API 回傳的是一個 list，我們取第一個
-        closing_price_str = api_data[0].get("ClosingPrice")
-        
-        if closing_price_str is None or closing_price_str == "--":
-            # print(f"[TWSE API] ClosingPrice not found for {stock_code} on {date_yyyymmdd}")
-            return None
-
-        # 轉換為 float，處理千分位 ,
-        price = float(closing_price_str.replace(',', ''))
-        
-        # 如果價格為0，也視為無效資料
-        if price == 0:
-            return None
-            
-        return price
-        
-    except Exception as e:
-        print(f"[TWSE API] Exception for {stock_code}: {e}")
-        return None
-
-def get_twse_price_for_date_with_backfill(stock_code, target_date_str, token):
-    """
-    使用 TWSE OpenAPI 獲取指定日期的收盤價，如果當天沒有資料則往前查找
-    stock_code: '2330.TW' or '0050.TW' or 'XXXX.TWO'
-    target_date_str: 'YYYY-MM-DD'
-    """
-    # 先嘗試獲取指定日期的價格
-    price = get_twse_price_for_date(stock_code, target_date_str, token)
-    if price is not None:
-        return price
-    
-    # 如果當天沒有資料，嘗試往前找最近的一個交易日
-    try:
-        target_date = datetime.strptime(target_date_str, '%Y-%m-%d').date()
-        temp_end = target_date
-        temp_start = temp_end - timedelta(days=14)  # 最多往前找7天
-        
-        current_check_date = temp_end
-        while current_check_date >= temp_start:
-            check_date_str = current_check_date.strftime('%Y-%m-%d')
-            price = get_twse_price_for_date(stock_code, check_date_str, token)
-            if price is not None:
-                print(f"  -> [TWSE API] {stock_code} on {target_date_str} has no data, using last valid price: {price:.2f} on {check_date_str}")
-                return price
-            current_check_date -= timedelta(days=1)
-            
-        print(f"  -> [TWSE API] Could not find any recent price for {stock_code}")
-        return None
-    except Exception as e:
-        print(f"[TWSE API] Error processing backfill for {stock_code}: {e}")
-        return None
 
 # --- (修改) 儲存邏輯改為 SQL ---
 def update_history_log(snapshot_data, target_date=None):
@@ -1373,7 +1192,7 @@ def _execute_range_backfill(app, start_date_str, end_date_str):
                     except Exception as e:
                         print(f"[Range Backfill] ERROR processing {current_date}: {e}")
                     
-                    print(f"[Range Backfill] Waiting 6.1s to respect TWSE rate limit...")
+                    print(f"[Range Backfill] Waiting 6.1s to respect MIS API rate limit...")
                     import time as time_module
                     time_module.sleep(6.1)
                 
