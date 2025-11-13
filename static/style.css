@@ -424,17 +424,6 @@ body {
 
 /* Dynamically generated styles for hiding columns */
 
-/* --- 閃爍通知效果 --- */
-.flash-alert {
-    animation: flash-alert 1s ease-out;
-}
-
-@keyframes flash-alert {
-    0% { background-color: transparent; }
-    50% { background-color: rgba(255, 193, 7, 0.5); } /* Bootstrap warning 淺色 */
-    100% { background-color: transparent; }
-}
-
 /* --- 總報酬率閃爍效果 --- */
 #total-pl-percent.flash-threshold-exceeded {
     animation: flash-threshold 1s infinite;

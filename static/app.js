@@ -1863,11 +1863,6 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', handlePerformanceTypeClick);
     });
     
-    // 添加日期範圍查詢按鈕事件監聽器
-    document.getElementById('date-range-query-btn').addEventListener('click', function() {
-        showHistoricalDataRange();
-    });
-    
     // 添加清除日期範圍按鈕事件監聽器
     document.getElementById('clear-date-range').addEventListener('click', clearDateRange);
     
