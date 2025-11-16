@@ -115,7 +115,7 @@ function animateCountUp(element, endVal, previousVal, formatter) {
 async function fetchWithRetry(url, options = {}, attempt = 0) {
     const MAX_RETRIES = 3;
     const RETRY_DELAY = 2000; // 2秒
-    const FETCH_TIMEOUT = 10000; // 10秒超時
+    const FETCH_TIMEOUT = 180000; // 10秒超時
     
     // 創建帶有超時的 fetch 請求
     const controller = new AbortController();
@@ -1868,6 +1868,23 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 初始化設定
     initSettings();
+
+// (新) AI 聊天室邏
+    const aiChatSendBtn = document.getElementById('ai-chat-send-btn');
+    const aiChatInput = document.getElementById('ai-chat-input');
+
+    if (aiChatSendBtn) {
+        aiChatSendBtn.addEventListener('click', sendAiChatMessage);
+    }
+
+    if (aiChatInput) {
+        aiChatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendAiChatMessage();
+            }
+        });
+
+    } 
     
     // 設置除錯模式按鈕事件監聽器
     document.getElementById('backfill-range-btn').addEventListener('click', handleRangeBackfill);
@@ -2046,6 +2063,65 @@ async function handleDeleteHistory() {
     }
 }
 
+// (新) 發送 AI 聊天訊息
+async function sendAiChatMessage() {
+    const input = document.getElementById('ai-chat-input');
+    const messagesContainer = document.getElementById('ai-chat-messages');
+    const question = input.value.trim();
+
+    if (!question) return;
+
+    // 1. 顯示使用者訊息
+    const userMessageEl = document.createElement('div');
+    userMessageEl.className = 'user-message';
+    userMessageEl.textContent = question;
+    messagesContainer.appendChild(userMessageEl);
+
+    // 清空輸入框
+    input.value = '';
+
+    // 2. 顯示 AI 思考中...
+    const aiTypingEl = document.createElement('div');
+    aiTypingEl.className = 'ai-message';
+    aiTypingEl.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> 思考中...';
+    messagesContainer.appendChild(aiTypingEl);
+    
+    // 滾動到底部
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+    try {
+        // 3. 發送請求到後端
+        const response = await fetchWithRetry('/api/ask_ai', { // (使用 fetchWithRetry)
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ question: question })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'API 請求失敗');
+        }
+
+        const data = await response.json();
+        
+        // 4. 更新為 AI 回覆 (使用 textContent 避免 XSS)
+        const unsafeHtml = marked.parse(data.response);
+        // DOMPurify.sanitize() 會清除掉危險的標籤 (例如 <script>)
+        const safeHtml = DOMPurify.sanitize(unsafeHtml);
+        // 最後才安全地使用 innerHTML 
+        aiTypingEl.innerHTML = safeHtml;
+
+    } catch (error) {
+        console.error('Error asking AI:', error);
+        aiTypingEl.textContent = `抱歉，連線時發生錯誤: ${error.message}`;
+        aiTypingEl.style.color = '#dc3545'; // (Bootstrap 警告色)
+    } finally {
+        // 再次滾動到底部
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+}
 
 // (新增) 清除日期範圍輸入
 function clearDateRange() {

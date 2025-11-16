@@ -526,3 +526,38 @@ body {
     background-color: #6c757d !important; /* 灰色 */
     color: white;
 }
+
+/* --- AI 聊天室 --- */
+#ai-chat-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.user-message, .ai-message {
+    padding: 8px 12px;
+    border-radius: 10px;
+    max-width: 85%;
+    word-wrap: break-word;
+    line-height: 1.4;
+}
+
+.user-message {
+    background-color: #0d6efd;
+    color: white;
+    align-self: flex-end;
+    border-bottom-right-radius: 0;
+}
+
+.ai-message {
+    background-color: var(--light-gray, #f8f9fa);
+    color: var(--table-text-color, #212529);
+    align-self: flex-start;
+    border-bottom-left-radius: 0;
+}
+
+/* 確保深色模式下 ai-message 背景和文字顏色正確 */
+[data-theme="dark"] .ai-message {
+    background-color: #2d2d2d;
+    color: var(--text-color, #ffffff);
+}

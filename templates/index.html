@@ -265,7 +265,29 @@
         </div>
     </div>
 </div>
-        
+
+<h4 class="mb-3 mt-5">AI 投資助理</h4>
+         <div class="card shadow-sm mb-4" id="ai-chat-section">
+             <div class="card-header bg-light">
+                 <h5 class="mb-0">與 AI 對話</h5>
+             </div>
+             <div class="card-body">
+                 <div id="ai-chat-messages" style="height: 400px; overflow-y: auto; padding: 1rem; margin-bottom: 1rem; border: 1px solid var(--table-border-color); border-radius: var(--border-radius);">
+                     <div class="ai-message">你好！有什麼關於您投資組合的問題嗎？</div>
+                 </div>
+                 
+                 <div class="input-group">
+                     <input type="text" id="ai-chat-input" class="form-control" placeholder="輸入您的問題...">
+                     <button id="ai-chat-send-btn" class="btn btn-primary">
+                         <i class="bi bi-send-fill"></i>
+                     </button>
+                 </div>
+             </div>
+         </div>
+         <div id="debug-console-container" class="card shadow-sm mb-3" style="display: none;">
+             ...
+         </div>
+
 <!-- 除錯訊息控制台 -->
 <div id="debug-console-container" class="card shadow-sm mb-3" style="display: none;">
     <div class="card-body">
@@ -486,6 +508,9 @@
           <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
           <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
           <script src="https://cdn.jsdelivr.net/npm/countup.js@2.0.7/dist/countUp.min.js"></script>
+          <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+          <script src="https://cdn.jsdelivr.net/npm/dompurify@3.3.0/dist/purify.min.js"></script>
           <script src="{{ url_for('static', filename='app.js') }}"></script>
+          
       </body>
       </html>

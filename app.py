@@ -11,6 +11,7 @@ import sqlite3 # (新) 匯入 sqlite
 from threading import Thread # (新) 匯入 Thread
 from collections import deque
 import logging
+from openai import OpenAI
 
 
 BACKFILL_STATUS = {
@@ -745,6 +746,114 @@ def save_daily_snapshot():
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/api/ask_ai', methods=['POST'])
+def ask_ai():
+    """
+    接收前端問題，並呼叫 OpenAI 相容 API (使用 v1.0.0+ 語法)
+    已升級：加入 (1) 即時股價 + (2) 最近 30 天歷史資料
+    """
+    data = request.json
+    user_question = data.get('question')
+
+    if not user_question:
+        return jsonify({"error": "沒有收到問題"}), 400
+
+    try:
+        # 1. 載入 "即時" 持股資訊 (同上次)
+        portfolio = load_portfolio()
+        portfolio_str = "[]" # 預設為空
+        
+        if portfolio:
+            tickers = list(set(stock['ticker'] for stock in portfolio))
+            live_data = get_current_prices(tickers) 
+            rate_cny_twd = get_cny_to_twd_rate()    
+            
+            for stock in portfolio:
+                ticker = stock['ticker']
+                shares = float(stock.get('shares', 0))
+                avg_cost = float(stock.get('avg_cost', 0))
+                currency = stock.get("currency", "TWD")
+                ticker_data = live_data.get(ticker, {})
+                current_price = ticker_data.get('price', 0)
+                market_value = current_price * shares
+                cost_basis = avg_cost * shares
+                pl_amount = market_value - cost_basis
+                pl_percent = (pl_amount / cost_basis * 100) if cost_basis != 0 else 0
+                
+                stock['current_price'] = current_price
+                stock['estimated_market_value_orig'] = round(market_value, 2)
+                stock['estimated_pl_percent'] = f"{round(pl_percent, 2)}%"
+                
+                if currency == 'CNY':
+                    stock['note'] = f"此為人民幣計價，目前匯率約 {rate_cny_twd}"
+            
+            portfolio_str = json.dumps(portfolio, indent=2, ensure_ascii=False)
+
+        # 2. (新) 載入 "歷史" 資料 (最近 30 天)
+        historical_str = "[]" # 預設為空
+        try:
+            conn = get_db_conn() # 呼叫您現有的 DB 連線函式
+            cursor = conn.cursor()
+            # (新) 查詢 DB，抓取最近 30 筆資料
+            cursor.execute("SELECT date, total, tw_value, cn_value FROM daily_history ORDER BY date DESC LIMIT 365")
+            rows = cursor.fetchall()
+            conn.close()
+            
+            if rows:
+                historical_data = [{"date": row['date'], "total": row['total'], "tw_value": row['tw_value'], "cn_value": row['cn_value']} for row in rows]
+                # 倒轉，讓日期從舊到新，方便 AI 分析趨勢
+                historical_data.reverse() 
+                historical_str = json.dumps(historical_data, indent=2, ensure_ascii=False)
+
+        except Exception as e:
+            debug_print(f"[AI Error] 查詢 history.db 失敗: {e}")
+            # 即使 DB 查詢失敗，我們依然繼續，只是不傳送歷史資料
+            pass 
+
+        # 3. (新) 設定 AI 的 Prompt (包含歷史資料)
+        system_prompt = (
+            "你是一個專業的金融投資組合助理。\n"
+            "你會收到兩份 JSON 資料：\n"
+            "1. `current_portfolio`: 目前持股的即時股價與損益。\n"
+            "2. `historical_summary`: 最近 365 天的每日資產總結 (日期從舊到新)。\n"
+            "請根據這兩份資料，用你的財經知識和趨勢分析能力來回答。\n"
+            "請使用繁體中文回答。"
+        )
+        
+        user_prompt = f"""
+        以下是我目前的持股與即時股價 (current_portfolio):
+        {portfolio_str}
+        
+        以下是我最近 30 天的歷史資產總結 (historical_summary):
+        {historical_str}
+        
+        我的問題是:
+        {user_question}
+        """
+
+        # 4. 設定 OpenAI Client (請確認您的設定)
+        client = OpenAI(
+            base_url="http://192.168.1.50:7001/v1",
+            api_key="12345678" 
+        )
+
+        # 5. 呼叫 API
+        response = client.chat.completions.create(
+            model="Qwen3-Coder", 
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.7,
+        )
+
+        ai_response = response.choices[0].message.content
+        return jsonify({"response": ai_response})
+
+    except Exception as e:
+        debug_print(f"[AI Error] 呼叫 AI API 時發生錯誤: {e}") 
+        return jsonify({"error": f"AI 服務連線失敗: {e}"}), 500
 
 # --- (修改) 讀取邏輯改為 SQL ---
 @app.route('/api/portfolio', methods=['GET'])
