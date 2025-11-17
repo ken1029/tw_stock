@@ -1,6 +1,6 @@
 # TW Stock Gemini
 
-一個用於追蹤台灣和中國股票投資組合的即時儀表板應用程式。
+一個用於追蹤台灣和中國股票投資組合的即時儀表板應用程式，整合AI投資助理功能。
 
 ## 功能特色
 
@@ -10,6 +10,7 @@
 - 分別顯示台灣股票和中國股票的市值
 - 即時人民幣匯率 (CNY/TWD) 顯示
 - 顯示股票數據來源 (MIS/Sina/yfinance)
+- 連線狀態指示器與自動重試機制
 
 ### 投資組合管理
 - 新增、編輯、刪除股票持股
@@ -17,6 +18,7 @@
 - 自動抓取股票名稱
 - 試算功能 (What-if Analysis) - 計算目標價格下的潛在收益
 - 支援台灣上市櫃股票 (.TW/.TWO) 和中國股票 (.SS/.SZ)
+- 表格欄位自訂顯示/隱藏功能
 
 ### 歷史數據追蹤
 - 每日自動快照記錄 (交易日下午 3:30)
@@ -24,6 +26,7 @@
 - 圖表顯示歷史績效趨勢
 - 支援多種時間範圍查詢 (近7天、近30天、本月 MTD、本年 YTD、近一年)
 - 支援個股歷史價格圖表
+- 區間查詢功能
 
 ### 視覺化圖表
 - 總資產歷史圖表
@@ -31,6 +34,11 @@
 - 可自訂顯示的圖表系列 (總資產、台灣股票、中國股票)
 - 深色/淺色主題支援
 - 圖表系列可透過圖例點擊顯示/隱藏
+
+### AI 投資助理
+- 整合 OpenAI 相容 API 的 AI 投資助理
+- 可分析即時持股資訊和歷史數據
+- 提供投資建議和分析
 
 ### 通知系統
 - 總報酬率閃爍通知
@@ -44,6 +52,7 @@
 - 歷史資料範圍回補
 - 歷史資料刪除
 - 除錯訊息顯示
+- 實時除錯控制台
 
 ## 每日變動 (vs 昨收) 歸零機制
 
@@ -54,7 +63,7 @@
 2. **非交易日處理**：週末和假日不會記錄數據，因此在下一個交易日會繼續與最後一個交易日的數據比較
 
 ### 技術實現
-- 系統使用 [`APScheduler`](app.py:10) 在每天下午 3:30 自動執行 [`save_daily_snapshot()`](app.py:696) 函數
+- 系統使用 [`APScheduler`](app.py:10) 在每天下午 3:30 自動執行 [`save_daily_snapshot()`](app.py:697) 函數
 - 快照只在週一至週五執行
 - 昨日收盤價透過資料庫查詢獲得：
   ```python
@@ -72,16 +81,17 @@
 
 ```
 ├── app.py              # 主應用程式 (Flask 伺服器)
+├── scheduler.py        # 獨立排程器腳本
 ├── portfolio.json      # 投資組合資料
 ├── history.db          # 歷史數據 SQLite 資料庫
 ├── history.json        # 歷史數據 JSON 檔案 (備份)
-├── init_db.py          # 資料庫初始化腳本
-├── scheduler.py        # 獨立排程器腳本
+├── .python-version     # Python 版本指定檔案
 ├── templates/
 │   └── index.html      # 主頁面模板
 └── static/
     ├── app.js          # 前端 JavaScript 邏輯
-    └── style.css       # 樣式表
+    ├── style.css       # 樣式表
+    └── dark-mode-demo.html  # 深色模式演示頁面
 ```
 
 ## 安裝與執行
@@ -93,24 +103,20 @@
 - APScheduler
 - pandas
 - sqlite3
+- openai
 
 ### 安裝步驟
 1. 安裝依賴套件：
    ```bash
-   pip install flask yfinance apscheduler pandas
+   pip install flask yfinance apscheduler pandas openai requests
    ```
 
-2. 初始化資料庫：
-   ```bash
-   python init_db.py
-   ```
-
-3. 啟動應用程式：
+2. 啟動應用程式：
    ```bash
    python app.py
    ```
 
-4. 開啟瀏覽器訪問 `http://localhost:5000`
+3. 開啟瀏覽器訪問 `http://localhost:5000`
 
 ### 啟動排程器
 為了確保每日快照功能正常運作，需要啟動獨立的排程器腳本：
@@ -124,7 +130,7 @@ python scheduler.py
 1. 點擊「新增持股」按鈕
 2. 輸入股票代號 (如 2317.TW 或 601138.SS)
 3. 輸入股數和平均成本
-4. 選擇貨幣類型 (TWD/CNY)
+4. 選擇貨幣類型 (TWD/CNY/USD)
 5. 點擊「儲存」
 
 ### 試算功能
@@ -148,6 +154,11 @@ python scheduler.py
 - 通知設定
 - 除錯模式
 
+### AI 投資助理
+- 在頁面底部的 AI 聊天區域輸入問題
+- AI 會分析您的即時持股和歷史數據
+- 提供個人化的投資建議和分析
+
 ### 除錯功能
 在設定中啟用除錯模式後，可使用以下功能：
 - 範圍回補歷史資料
@@ -162,12 +173,14 @@ python scheduler.py
 - `/api/stock_history/<ticker>` - 獲取個股歷史價格
 - `/api/backfill_status` - 獲取回補任務狀態
 - `/api/debug_messages` - 獲取除錯訊息
+- `/api/ask_ai` - 與 AI 投資助理對話
 
 ### POST/PUT 請求
 - `/api/stock` - 新增股票
 - `/api/stock/<ticker>` - 更新股票
 - `/api/trigger_snapshot` - 觸發快照任務
 - `/api/backfill_range` - 回補指定日期範圍的歷史資料
+- `/api/backfill_history` - 回補單日歷史資料
 
 ### DELETE 請求
 - `/api/stock/<ticker>` - 刪除股票
@@ -192,6 +205,20 @@ python scheduler.py
 - 使用 er-api.com API 獲取 CNY/TWD 匯率
 - 每分鐘更新一次快取
 
+## AI 整合
+
+### 配置
+- AI 投資助理使用 OpenAI 相容 API
+- 預設連接至 `http://192.168.1.50:7001/v1`
+- 使用 `Qwen3-Coder` 模型
+- 可在 [`app.py`](app.py:836-839) 中修改 API 配置
+
+### 功能
+- 分析即時持股資訊
+- 分析最近 365 天的歷史資產總結
+- 提供個人化投資建議
+- 支援繁體中文對話
+
 ## 注意事項
 
 - 系統只在交易日記錄每日快照
@@ -201,3 +228,4 @@ python scheduler.py
 - 個股歷史圖表顯示近30天數據
 - 排程器建議在交易日下午 3:30 之後執行，以確保能獲取正確的收盤價
 - 總市值歷史圖表數據來自 SQLite 資料庫
+- AI 功能需要配置相應的 API 服務器

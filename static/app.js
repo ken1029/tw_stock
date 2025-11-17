@@ -113,9 +113,14 @@ function animateCountUp(element, endVal, previousVal, formatter) {
 
 // 通用的帶重試機制的 fetch 函數
 async function fetchWithRetry(url, options = {}, attempt = 0) {
-    const MAX_RETRIES = 3;
+    const MAX_RETRIES = 150;
     const RETRY_DELAY = 2000; // 2秒
-    const FETCH_TIMEOUT = 180000; // 10秒超時
+    const FETCH_TIMEOUT = 10000; // 10秒超時
+    
+    // 獲取連線狀態元素
+    const statusEl = document.getElementById('connection-status');
+    const messageEl = document.getElementById('connection-message');
+    const retryCountEl = document.getElementById('retry-count');
     
     // 創建帶有超時的 fetch 請求
     const controller = new AbortController();
@@ -128,6 +133,9 @@ async function fetchWithRetry(url, options = {}, attempt = 0) {
         if (!response.ok) {
             throw new Error(`Network response was not ok (${response.status})`);
         }
+        
+        // 隱藏連線狀態（成功時）
+        if (statusEl) statusEl.style.display = 'none';
         return response;
     } catch (error) {
         clearTimeout(timeoutId); // 確保清除超時
@@ -137,13 +145,28 @@ async function fetchWithRetry(url, options = {}, attempt = 0) {
         if (error.name === 'AbortError') {
             // 如果還有重試機會，進行重試
             if (attempt < MAX_RETRIES) {
+                // 顯示重試狀態
+                if (statusEl) {
+                    statusEl.style.display = 'block';
+                    statusEl.className = 'connection-status alert alert-warning';
+                    messageEl.textContent = '連線超時，正在重新嘗試...';
+                    retryCountEl.textContent = `${attempt + 1}/${MAX_RETRIES}`;
+                }
+                
                 console.log(`Retrying fetch ${url} due to timeout... (${attempt + 1}/${MAX_RETRIES})`);
                 
                 // 設置延遲後重試
                 await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
                 return await fetchWithRetry(url, options, attempt + 1);
             } else {
-                // 重試次數已用盡，顯示錯誤訊息
+                // 顯示最終錯誤狀態
+                if (statusEl) {
+                    statusEl.style.display = 'block';
+                    statusEl.className = 'connection-status alert alert-danger';
+                    messageEl.textContent = '連線超時，請檢查網路連線';
+                    retryCountEl.textContent = `${MAX_RETRIES}/${MAX_RETRIES}`;
+                }
+                
                 console.error(`Max retries exceeded due to timeout for ${url}.`);
                 
                 throw new Error("請求超時，無法加載數據");
@@ -152,13 +175,35 @@ async function fetchWithRetry(url, options = {}, attempt = 0) {
             // 其他錯誤
             // 如果還有重試機會，進行重試
             if (attempt < MAX_RETRIES) {
+                // 顯示重試狀態
+                if (statusEl) {
+                    statusEl.style.display = 'block';
+                    statusEl.className = 'connection-status alert alert-warning';
+                    messageEl.textContent = '連線失敗，正在重新嘗試...';
+                    retryCountEl.textContent = `${attempt + 1}/${MAX_RETRIES}`;
+                }
+                
                 console.log(`Retrying fetch ${url}... (${attempt + 1}/${MAX_RETRIES})`);
                 
                 // 設置延遲後重試
                 await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
                 return await fetchWithRetry(url, options, attempt + 1);
             } else {
-                // 重試次數已用盡，顯示錯誤訊息
+                // 顯示最終錯誤狀態
+                if (statusEl) {
+                    statusEl.style.display = 'block';
+                    statusEl.className = 'connection-status alert alert-danger';
+                    
+                    // 根據錯誤類型顯示不同的訊息
+                    if (error.message.startsWith('Network response was not ok')) {
+                        messageEl.textContent = '無法連接到後端服務，請檢查 API 是否正常';
+                    } else {
+                        messageEl.textContent = '連線失敗，請檢查網路連線';
+                    }
+                    
+                    retryCountEl.textContent = `${MAX_RETRIES}/${MAX_RETRIES}`;
+                }
+                
                 console.error(`Max retries exceeded for ${url}.`);
                 
                 // 如果是 HTTP 錯誤，嘗試獲取伺服器返回的錯誤訊息

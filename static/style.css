@@ -561,3 +561,101 @@ body {
     background-color: #2d2d2d;
     color: var(--text-color, #ffffff);
 }
+
+/* --- 連線狀態指示器樣式 --- */
+.connection-status {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 1050;
+    padding: 10px 15px;
+    border-radius: 5px;
+    background-color: var(--light-gray);
+    border: 1px solid var(--table-border-color);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    min-width: 250px;
+    transition: all 0.3s ease;
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+/* 深色主題下的連線狀態樣式 */
+[data-theme="dark"] .connection-status {
+    background-color: #2d2d2d;
+    border-color: #444444;
+    color: #ffffff;
+}
+
+/* 連線狀態警告樣式 */
+.connection-status.alert-warning {
+    background-color: #fff3cd;
+    border-color: #ffeaa7;
+    color: #856404;
+}
+
+[data-theme="dark"] .connection-status.alert-warning {
+    background-color: #3d3d00;
+    border-color: #666600;
+    color: #ffecb5;
+}
+
+/* 連線狀態危險樣式 */
+.connection-status.alert-danger {
+    background-color: #f8d7da;
+    border-color: #f5c6cb;
+    color: #721c24;
+}
+
+[data-theme="dark"] .connection-status.alert-danger {
+    background-color: #4a1e1e;
+    border-color: #6c3428;
+    color: #f8d7da;
+}
+
+/* 連線狀態中的徽章樣式 */
+.connection-status .badge {
+    font-size: 0.75em;
+    font-weight: 500;
+    padding: 0.25em 0.5em;
+}
+
+/* 連線狀態中的載入動畫 */
+.connection-status .spinner-border-sm {
+    width: 1rem;
+    height: 1rem;
+    border-width: 0.2em;
+}
+
+/* 響應式設計 - 小螢幕 */
+@media (max-width: 768px) {
+    .connection-status {
+        top: 5px;
+        right: 5px;
+        min-width: 200px;
+        font-size: 0.9rem;
+    }
+    
+    .connection-status .badge {
+        font-size: 0.7em;
+    }
+}
+
+/* 確保連線狀態不會與其他元素重疊 */
+.connection-status {
+    z-index: 1060;
+}
+
+/* 在深色模式下確保文字可見性 */
+[data-theme="dark"] .connection-status .text-muted {
+    color: #adb5bd !important;
+}
