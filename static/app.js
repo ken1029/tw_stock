@@ -71,7 +71,6 @@ function applyFlashEffect(element, newValue, oldValue) {
     setTimeout(() => element.classList.remove('flash-up', 'flash-down'), 1000);
 }
 
-// --- (新) 數字滾動動畫 ---
 function animateCountUp(element, endVal, previousVal, formatter) {
     if (!element) return;
 
@@ -108,33 +107,6 @@ function animateCountUp(element, endVal, previousVal, formatter) {
         console.error(anim.error);
         element.textContent = options.formattingFn(endVal);
     }
-}
-
-// --- (新增) 備用動畫函數 ---
-function fallbackAnimateCountUp(element, endVal, previousVal, formatter) {
-    if (!element) return;
-    
-    // 確保 endVal 是數字類型
-    const numericEndVal = typeof endVal === 'number' ? endVal : parseFloat(endVal) || 0;
-    
-    // 如果 previousVal 是 undefined 或 null，則使用 0 作為起始值
-    const startVal = (typeof previousVal !== 'undefined' && previousVal !== null) ?
-        (typeof previousVal === 'number' ? previousVal : parseFloat(previousVal) || 0) : 0;
-    
-    // 直接設定最終值
-    const formattedValue = (formatter === percentFormatter)
-        ? formatter.format(numericEndVal / 100)
-        : formatter.format(numericEndVal);
-    element.textContent = formattedValue;
-    
-    // 添加簡單的淡入效果
-    element.style.opacity = '0';
-    element.style.transition = 'opacity 1.5s ease-in-out';
-    
-    // 觸發淡入效果
-    setTimeout(() => {
-        element.style.opacity = '1';
-    }, 10);
 }
 
 
@@ -478,7 +450,7 @@ function updateTable(stocks) {
         if (!tableBody.querySelector('.empty-row')) {
             tableBody.innerHTML = `
                 <tr class="empty-row">
-                    <td colspan="17" class="text-center p-5">
+                    <td colspan="15" class="text-center p-5">
                         <div class="empty-state-container">
                             <i class="bi bi-clipboard-data" style="font-size: 3rem; color: var(--muted-text);"></i>
                             <h4 class="mt-3">尚未新增任何持股</h4>
@@ -558,9 +530,7 @@ function updateTable(stocks) {
         newStockData[stock.ticker] = {
             current_price: stock.current_price,
             today_pl: stock.today_pl,
-            market_value: stock.market_value,
-            day_high: stock.day_high,
-            day_low: stock.day_low
+            market_value: stock.market_value
         };
     });
 
@@ -615,8 +585,6 @@ function createRow(stock, oldStockData) {
         <td data-key="avg_cost"></td>
         <td data-key="current_price" class="price-cell"></td>
         <td data-key="previous_close"></td>
-        <td data-key="day_high"></td>
-        <td data-key="day_low"></td>
         <td data-key="change_percent"></td>
         <td data-key="market_value" class="market-value-cell"></td>
         <td data-key="today_pl" class="today-pl-cell"></td>
@@ -630,9 +598,6 @@ function createRow(stock, oldStockData) {
     updateRowContent(row, stock, oldStockData);
     return row;
 }
-
-// 更新空狀態列數以匹配新欄位數
-const emptyStateColspan = 17; // 原本是15，現在增加了2個欄位
 
 // --- (新) 個股歷史價格圖表功能 --- 帶重試機制
 async function fetchStockHistory(ticker) {
@@ -655,7 +620,7 @@ function createStockChartContainer(ticker) {
     container.classList.add('stock-chart-row');
     container.dataset.ticker = `${ticker}-chart`;
     container.innerHTML = `
-        <td colspan="17" class="p-0">
+        <td colspan="15" class="p-0">
             <div class="collapse" id="chart-collapse-${ticker}">
                 <div class="card card-body border-top-0 rounded-0">
                     <canvas id="stock-chart-${ticker}"></canvas>
@@ -898,8 +863,6 @@ function updateRowContent(row, stock, oldStockData) {
     const todayPlFlashClass = getChangeClass(stock.today_pl, oldStockData.today_pl);
     const sourceBadge = getSourceBadge(stock.data_source); // <--- (新) 加入這行
     const marketValueFlashClass = getChangeClass(stock.market_value, oldStockData.market_value);
-    const dayHighFlashClass = getChangeClass(stock.day_high, oldStockData.day_high);
-    const dayLowFlashClass = getChangeClass(stock.day_low, oldStockData.day_low);
     const todayPlClass = getPlClass(stock.today_pl);
     const totalPlClass = getPlClass(stock.pl);
     const changePercentClass = getPlClass(stock.change_percent);  // 漲幅顏色類別
@@ -916,8 +879,6 @@ function updateRowContent(row, stock, oldStockData) {
     updateCell(row, 'avg_cost', numberFormatter.format(stock.avg_cost));
     updateCell(row, 'current_price', numberFormatter.format(stock.current_price), [priceChangeClass]);
     updateCell(row, 'previous_close', numberFormatter.format(stock.previous_close));
-    updateCell(row, 'day_high', numberFormatter.format(stock.day_high), [dayHighFlashClass]);
-    updateCell(row, 'day_low', numberFormatter.format(stock.day_low), [dayLowFlashClass]);
     updateCell(row, 'change_percent', percentFormatter.format(stock.change_percent / 100), [changePercentClass]);  // 新增漲幅顯示
     updateCell(row, 'market_value', currencyFormatter.format(stock.market_value), [marketValueFlashClass]);
     updateCell(row, 'today_pl', currencyFormatter.format(stock.today_pl), [todayPlClass, todayPlFlashClass]);
@@ -1782,7 +1743,7 @@ function setupColumnToggler() {
     const STORAGE_KEY = 'portfolio_column_visibility';
 
     // 預設隱藏的欄位
-    const defaultHidden = ['previous_close', 'chart', 'data_source', 'day_high', 'day_low'];
+    const defaultHidden = ['previous_close', 'chart', 'data_source'];
 
     // 1. 從 localStorage 載入設定，若無則使用預設值
     const savedSettings = JSON.parse(localStorage.getItem(STORAGE_KEY));
@@ -1796,14 +1757,6 @@ function setupColumnToggler() {
                 columnVisibility[key] = !defaultHidden.includes(key);
             }
         });
-    }
-    
-    // 確保新欄位預設為顯示
-    if (columnVisibility['day_high'] === undefined) {
-        columnVisibility['day_high'] = true;
-    }
-    if (columnVisibility['day_low'] === undefined) {
-        columnVisibility['day_low'] = true;
     }
 
     // 2. 產生 CSS 規則
@@ -1980,32 +1933,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // 設置除錯模式按鈕事件監聽器
     document.getElementById('backfill-range-btn').addEventListener('click', handleRangeBackfill);
     document.getElementById('delete-btn').addEventListener('click', handleDeleteHistory);
-    
-    // 測試 CountUp.js 是否正確載入
-    if (typeof CountUp !== 'undefined') {
-        console.log('CountUp.js loaded successfully');
-        // 進一步測試 CountUp.js 功能
-        try {
-            // 創建一個臨時的測試元素
-            const testElement = document.createElement('div');
-            document.body.appendChild(testElement);
-            
-            // 創建 CountUp 實例進行測試
-            const testCountUp = new CountUp(testElement, 1000);
-            if (testCountUp.error) {
-                console.error('CountUp.js initialization error:', testCountUp.error);
-            } else {
-                console.log('CountUp.js initialized successfully');
-            }
-            
-            // 移除測試元素
-            document.body.removeChild(testElement);
-        } catch (initError) {
-            console.error('CountUp.js initialization exception:', initError);
-        }
-    } else {
-        console.warn('CountUp.js failed to load');
-    }
     
     startFetching();
     fetchHistorySummary();
@@ -2363,6 +2290,18 @@ function applySettings(settings) {
     }
   }
 
+// 應用除錯模式設定
+// (修改) 應用除錯模式設定
+function applyDebugMode(isEnabled) {
+    const debugSection = document.getElementById('debug-section');
+    if (debugSection) {
+        debugSection.style.display = isEnabled ? 'block' : 'none';
+    }
+    
+    // (新) 改為在 <html> 標籤上切換 CSS Class，
+    // 這樣無論 <td> 何時被建立，都能正確顯示。
+    document.documentElement.classList.toggle('debug-mode-enabled', isEnabled);
+}
 
 // 打開設定模態框
 function openSettingsModal() {
