@@ -138,11 +138,12 @@ def get_current_prices(tickers):
 
 # --- (匯率、load/save portfolio 函式... 保持不變) ---
 cny_rate_cache = {"rate": None, "timestamp": 0}
-CACHE_DURATION_SECONDS = 60
+CACHE_DURATION_SECONDS = 60 
 
 def get_cny_to_twd_rate():
     global cny_rate_cache
     now = timestamp()
+    # 檢查快取是否有效
     if cny_rate_cache["rate"] and (now - cny_rate_cache["timestamp"] < CACHE_DURATION_SECONDS):
         return cny_rate_cache["rate"]
     try:
@@ -156,7 +157,8 @@ def get_cny_to_twd_rate():
         return rate
     except Exception as e:
         print(f"Error fetching exchange rate: {e}")
-        return cny_rate_cache["rate"] if cny_rate_cache["rate"] else 4.6 
+        # [修改點 2] 將備用值從 4.6 改為 4.4 (更接近現價，以免 API 失敗時數字跳動太大)
+        return cny_rate_cache["rate"] if cny_rate_cache["rate"] else 4.4
 
 def load_portfolio():
     # (修改) 從配置中獲取文件路徑

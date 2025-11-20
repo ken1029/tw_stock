@@ -74,8 +74,7 @@ function applyFlashEffect(element, newValue, oldValue) {
 function animateCountUp(element, endVal, previousVal, formatter) {
     if (!element) return;
 
-    // (修正) 改為檢查 countUp 全域變數 (v2 UMD 版本)
-    // 注意：全域變數是小寫開頭的 countUp，類別是大寫開頭的 CountUp
+    // 檢查 countUp 函式庫是否載入
     if (typeof countUp === 'undefined' || typeof countUp.CountUp === 'undefined') {
         console.warn('CountUp.js library not loaded. Skipping animation.');
         const formattedValue = (formatter === percentFormatter)
@@ -86,25 +85,37 @@ function animateCountUp(element, endVal, previousVal, formatter) {
     }
 
     const startVal = previousVal || 0;
+    
+    // [修正] 自動偵測格式化器的小數位數設定
+    let decimalPlaces = 0;
+    if (formatter && formatter.resolvedOptions) {
+        decimalPlaces = formatter.resolvedOptions().maximumFractionDigits || 0;
+    }
+
     const options = {
         startVal: startVal,
         duration: 1.5,
         useEasing: true,
         separator: ',',
         decimal: '.',
-        formattingFn: (n) => formatter.format(n)
+        decimalPlaces: decimalPlaces, // [關鍵修正] 顯式指定小數位數，避免被取整為整數
+        formattingFn: (n) => {
+            // 對於百分比，CountUp 傳入的是乘過 100 的數值(例如 2.5)，
+            // 但 formatter.format (percentFormatter) 期望的是 0.025
+            if (formatter === percentFormatter) {
+                return formatter.format(n / 100);
+            }
+            return formatter.format(n);
+        }
     };
 
-    if (formatter === percentFormatter) {
-        options.formattingFn = (n) => formatter.format(n / 100);
-    }
-
-    // (修正) 使用 countUp.CountUp 進行實例化
+    // 實例化並執行
     const anim = new countUp.CountUp(element, endVal, options);
     if (!anim.error) {
         anim.start();
     } else {
         console.error(anim.error);
+        // 發生錯誤時的備用顯示
         element.textContent = options.formattingFn(endVal);
     }
 }
@@ -259,7 +270,7 @@ function updateTotals(totals) {
     animateCountUp(document.getElementById('cn-market-value'), totals.cn_value, previousTotals.cn_value, currencyFormatter);
     
     // --- (新增) 更新人民幣匯率顯示 ---
-    const cnyRate = totals.cny_rate || 4.6;
+    const cnyRate = totals.cny_rate || 4.4;
     animateCountUp(document.getElementById('cny-rate'), cnyRate, previousTotals.cny_rate, numberFormatter);
     
     const todayPlTotal = totals.daily_diff || 0;
