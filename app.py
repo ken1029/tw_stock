@@ -132,7 +132,7 @@ def get_current_prices(tickers):
         if ticker not in all_stock_data:
             print(f"Warning: No price data found for {ticker} from any source.")
             # (新) 標記來源為 N/A
-            all_stock_data[ticker] = {"price": 0, "previous_close": 0, "source": "N/A"}
+            all_stock_data[ticker] = {"price": 0, "previous_close": 0, "day_high": 0, "day_low": 0, "source": "N/A"}
 
     return all_stock_data
 
@@ -349,11 +349,20 @@ def get_mis_tw_prices(tickers):
                             current_price = open_price
                         else:
                             current_price = prev_close
-
-            stock_data[yfinance_key] = {
-                "price": float(current_price),
-                "previous_close": float(prev_close)
-            }
+                            
+                # 獲取當日最高和最低價格
+                day_high = stock.get("h", "0")
+                day_low = stock.get("l", "0")
+                
+                if day_high == "-" or day_high == "": day_high = "0"
+                if day_low == "-" or day_low == "": day_low = "0"
+   
+                stock_data[yfinance_key] = {
+                    "price": float(current_price),
+                    "previous_close": float(prev_close),
+                    "day_high": float(day_high),
+                    "day_low": float(day_low)
+                }
         
         print(f"[MIS API] Success. Found {len(stock_data)} stocks.")
         return stock_data
@@ -434,13 +443,17 @@ def get_sina_current_prices(tickers):
                 if yf_ticker and float(current_price) > 0:
                     stock_data[yf_ticker] = {
                         "price": float(current_price),
-                        "previous_close": float(prev_close)
+                        "previous_close": float(prev_close),
+                        "day_high": float(parts[4]) if len(parts) > 4 and parts[4] != "-" else float(current_price),
+                        "day_low": float(parts[5]) if len(parts) > 5 and parts[5] != "-" else float(current_price)
                     }
                 elif yf_ticker:
                     # (備援) 如果目前市價為 0 (例如剛開盤)，使用昨收
                     stock_data[yf_ticker] = {
                         "price": float(prev_close),
-                        "previous_close": float(prev_close)
+                        "previous_close": float(prev_close),
+                        "day_high": float(prev_close),
+                        "day_low": float(prev_close)
                     }
     except Exception as e:
         print(f"Error [Sina] processing request: {e}")
@@ -511,16 +524,30 @@ def get_yfinance_current_prices(tickers):
                 price = 0
                 prev_close = 0
 
+            # 獲取當日最高和最低價格 (使用yfinance的history方法)
+            day_high = 0
+            day_low = 0
+            try:
+                # 獲取今天的歷史數據
+                today_hist = ticker_obj.history(period='1d')
+                if not today_hist.empty:
+                    day_high = today_hist['High'].iloc[-1]
+                    day_low = today_hist['Low'].iloc[-1]
+            except Exception as e:
+                print(f"  -> [yfinance day high/low] Error processing day high/low for {ticker_str}: {e}")
+
             stock_data[original_ticker_key] = {
-                "price": float(price), 
-                "previous_close": float(prev_close)
+                "price": float(price),
+                "previous_close": float(prev_close),
+                "day_high": float(day_high),
+                "day_low": float(day_low)
             }
         
         except Exception as e:
             print(f"Error [yfinance price] processing {ticker_str}: {e}")
             matching_tickers = [t for t in tickers if t.upper() == ticker_str.upper()]
             if matching_tickers:
-                stock_data[matching_tickers[0]] = {"price": 0, "previous_close": 0}
+                stock_data[matching_tickers[0]] = {"price": 0, "previous_close": 0, "day_high": 0, "day_low": 0}
                 
     return stock_data
 
@@ -924,6 +951,8 @@ def get_portfolio():
             "shares": shares, "avg_cost": avg_cost,
             "current_price": current_price_original,
             "previous_close": prev_close_original,
+            "day_high": ticker_data.get('day_high', 0),
+            "day_low": ticker_data.get('day_low', 0),
             "change_percent": change_percent,  # 新增漲幅欄位
             "market_value": market_value_twd,
             "pl": pl_twd,
