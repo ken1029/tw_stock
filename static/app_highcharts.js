@@ -730,10 +730,18 @@ function renderStockChart(ticker, historyData) {
         },
         xAxis: {
             type: 'datetime',
+            dateTimeLabelFormats: {
+                day: '%m/%d',
+                week: '%m/%d',
+                month: '%Y-%m',
+                year: '%Y'
+            },
             labels: {
                 style: {
                     color: textColor
-                }
+                },
+                autoRotation: [-45, -90],
+                autoRotationLimit: 100
             },
             gridLineColor: gridColor,
             lineColor: gridColor
@@ -1052,10 +1060,18 @@ function renderHistoryChart(dailyData) {
         },
         xAxis: {
             type: 'datetime',
+            dateTimeLabelFormats: {
+                day: '%m/%d',
+                week: '%m/%d',
+                month: '%Y-%m',
+                year: '%Y'
+            },
             labels: {
                 style: {
                     color: textColor
-                }
+                },
+                autoRotation: [-45, -90],
+                autoRotationLimit: 100
             },
             gridLineColor: gridColor,
             lineColor: gridColor
