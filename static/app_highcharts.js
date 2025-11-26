@@ -803,6 +803,7 @@ function renderStockChart(ticker, historyData) {
         series: [{
             name: `${ticker} 歷史價格`,
             type: 'area',
+            threshold: null,
             data: priceData,
             yAxis: 0,
             color: isDarkTheme ? 'rgba(0, 123, 255, 0.8)' : 'rgba(0, 123, 255, 1)',
@@ -822,6 +823,7 @@ function renderStockChart(ticker, historyData) {
         }, {
             name: `${ticker} 持有價值 (TWD)`,
             type: 'area',
+            threshold: null,
             data: valueData,
             yAxis: 1,
             color: isDarkTheme ? 'rgba(255, 99, 132, 0.8)' : 'rgba(255, 99, 132, 1)',
@@ -990,6 +992,7 @@ function renderHistoryChart(dailyData) {
         series.push({
             name: '總資產 (TWD)',
             type: 'area',
+            threshold: null,
             data: totalData,
             color: isDarkTheme ? 'rgba(0, 123, 255, 0.8)' : 'rgba(0, 123, 255, 1)',
             fillColor: {
@@ -1072,7 +1075,9 @@ function renderHistoryChart(dailyData) {
                     return currencyFormatter.format(this.value);
                 }
             },
-            gridLineColor: gridColor
+            gridLineColor: gridColor,
+            startOnTick: false,
+            endOnTick: false
         },
         legend: {
             itemStyle: {
