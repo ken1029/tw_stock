@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,93 +11,93 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body class="bg-light">
     <div class="container mt-4">
         <header class="mb-4 text-center" style="position: relative;">
-                    <h2 class="mb-0">Multi-Market Portfolio Tracker</h2>
-                    <div class="header-controls">
-                        <div id="loading-spinner" class="spinner-border text-primary" role="status"
-                             style="display: none;">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <button class="btn btn-outline-secondary" id="settings-btn" title="設定">
-                            <i class="bi bi-gear-fill"></i>
-                        </button>
-                    </div>
-                </header>
-                
-                <!-- 連線狀態指示器 -->
-                <div id="connection-status" class="connection-status" style="display: none;">
-                    <div class="d-flex align-items-center">
-                        <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-                        <span id="connection-message">正在重新連線...</span>
-                        <span id="retry-count" class="ms-2 badge bg-warning">1/3</span>
-                    </div>
+            <h2 class="mb-0">Multi-Market Portfolio Tracker</h2>
+            <div class="header-controls">
+                <div id="loading-spinner" class="spinner-border text-primary" role="status" style="display: none;">
+                    <span class="visually-hidden">Loading...</span>
                 </div>
+                <button class="btn btn-outline-secondary" id="settings-btn" title="設定">
+                    <i class="bi bi-gear-fill"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- 連線狀態指示器 -->
+        <div id="connection-status" class="connection-status" style="display: none;">
+            <div class="d-flex align-items-center">
+                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                <span id="connection-message">正在重新連線...</span>
+                <span id="retry-count" class="ms-2 badge bg-warning">1/3</span>
+            </div>
+        </div>
         <div class="row mb-3 g-3">
-                    <div class="col-lg-3 col-md-6">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-body">
-                                <h6 class="card-title text-muted">
-                                    總市值 (即時)
-                                    <span class="pulsing-dot ms-1"></span>
-                                </h6>
-                                <h3 id="total-market-value">TWD 0</h3>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-3 col-md-6">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-body">
-                                <h6 class="card-title text-muted">總成本</h6>
-                                <h3 id="total-cost-basis">TWD 0</h3>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-3 col-md-6">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-body">
-                                <h6 class="card-title text-muted">總損益 (累計)</h6>
-                                <h3 id="total-pl">TWD 0</h3>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-3 col-md-6">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-body">
-                                <h6 class="card-title text-muted">總報酬率 (累計)</h6>
-                                <h3 id="total-pl-percent">0.00%</h3>
-                            </div>
-                        </div>
+            <div class="col-lg-3 col-md-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <h6 class="card-title text-muted">
+                            總市值 (即時)
+                            <span class="pulsing-dot ms-1"></span>
+                        </h6>
+                        <h3 id="total-market-value">TWD 0</h3>
                     </div>
                 </div>
+            </div>
+            <div class="col-lg-3 col-md-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <h6 class="card-title text-muted">總成本</h6>
+                        <h3 id="total-cost-basis">TWD 0</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <h6 class="card-title text-muted">總損益 (累計)</h6>
+                        <h3 id="total-pl">TWD 0</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <h6 class="card-title text-muted">總報酬率 (累計)</h6>
+                        <h3 id="total-pl-percent">0.00%</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="row mb-4 g-3">
-                    <div class="col-lg-3 col-md-6">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-body">
-                                <h6 class="card-title text-muted">台灣股票總市值 (TWD)</h6>
-                                <h3 id="tw-market-value">TWD 0</h3>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-3 col-md-6">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-body">
-                                <h6 class="card-title text-muted">中國股票總市值 (TWD)</h6>
-                                <h3 id="cn-market-value">TWD 0</h3>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-3 col-md-6">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-body">
-                                <h6 class="card-title text-muted">人民幣匯率 (CNY/TWD)</h6>
-                                <h3 id="cny-rate">4.6000</h3>
-                            </div>
-                        </div>
+            <div class="col-lg-3 col-md-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <h6 class="card-title text-muted">台灣股票總市值 (TWD)</h6>
+                        <h3 id="tw-market-value">TWD 0</h3>
                     </div>
                 </div>
-        
+            </div>
+            <div class="col-lg-3 col-md-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <h6 class="card-title text-muted">中國股票總市值 (TWD)</h6>
+                        <h3 id="cn-market-value">TWD 0</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3 col-md-6">
+                <div class="card shadow-sm h-100">
+                    <div class="card-body">
+                        <h6 class="card-title text-muted">人民幣匯率 (CNY/TWD)</h6>
+                        <h3 id="cny-rate">4.6000</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <h4 class="mb-3">績效摘要</h4>
         <div class="row mb-4 g-3">
             <div class="col-lg-4 col-md-12">
@@ -104,7 +105,7 @@
                     <div class="card-body">
                         <h5 class="card-title">每日變動 (vs 昨收)</h5>
                         <p class="card-text">
-                            與昨日收盤 
+                            與昨日收盤
                             <span id="last-close-value" class="text-muted fw-bold">(TWD 0)</span> 相比
                         </p>
                         <h3 id="daily-summary-diff" class="text-dark">TWD 0</h3>
@@ -117,22 +118,26 @@
                     <div class="card-body d-flex flex-column">
                         <div class="d-flex flex-wrap gap-2 mb-3">
                             <div id="range-selector" class="btn-group btn-group-sm" role="group">
-                                <button type="button" class="btn btn-outline-primary active" data-range="MTD">本月 (MTD)</button>
+                                <button type="button" class="btn btn-outline-primary active" data-range="MTD">本月
+                                    (MTD)</button>
                                 <button type="button" class="btn btn-outline-primary" data-range="7D">近7天</button>
                                 <button type="button" class="btn btn-outline-primary" data-range="30D">近30天</button>
                                 <button type="button" class="btn btn-outline-primary" data-range="YTD">本年 (YTD)</button>
                                 <button type="button" class="btn btn-outline-primary" data-range="1Y">近一年</button>
                             </div>
                             <div id="performance-type-selector" class="btn-group btn-group-sm" role="group">
-                                <button type="button" class="btn btn-outline-success active" data-performance-type="total">總績效</button>
-                                <button type="button" class="btn btn-outline-success" data-performance-type="tw">台灣</button>
-                                <button type="button" class="btn btn-outline-success" data-performance-type="cn">中國</button>
+                                <button type="button" class="btn btn-outline-success active"
+                                    data-performance-type="total">總績效</button>
+                                <button type="button" class="btn btn-outline-success"
+                                    data-performance-type="tw">台灣</button>
+                                <button type="button" class="btn btn-outline-success"
+                                    data-performance-type="cn">中國</button>
                             </div>
                         </div>
                         <div class="d-flex justify-content-between align-items-center mt-auto">
                             <div>
                                 <h5 class="card-title mb-1">歷史績效 (<span id="range-label">本月</span>)</h5>
-                                 <p class="card-text mb-0">
+                                <p class="card-text mb-0">
                                     自 <span id="range-start-value" class="text-muted fw-bold">(TWD 0)</span>
                                     至 <span id="range-end-value" class="text-muted fw-bold">(TWD 0)</span>
                                 </p>
@@ -151,11 +156,13 @@
             <h4 class="mb-0">持股明細</h4>
             <div class="d-flex gap-2"> <!-- 使用 gap-2 來增加按鈕間距 -->
                 <div class="dropdown">
-                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="column-toggle-btn" data-bs-toggle="dropdown" aria-expanded="false">
+                    <button class="btn btn-outline-secondary dropdown-toggle" type="button" id="column-toggle-btn"
+                        data-bs-toggle="dropdown" aria-expanded="false">
                         <i class="bi bi-layout-three-columns me-1"></i>
                         欄位顯示
                     </button>
-                    <ul class="dropdown-menu dropdown-menu-end" id="column-toggle-dropdown" aria-labelledby="column-toggle-btn">
+                    <ul class="dropdown-menu dropdown-menu-end" id="column-toggle-dropdown"
+                        aria-labelledby="column-toggle-btn">
                         <!-- JavaScript will populate this -->
                     </ul>
                 </div>
@@ -165,7 +172,7 @@
                 </button>
             </div>
         </div>
-       
+
         <div class="card shadow-sm mb-4">
             <div class="card-body">
                 <div class="table-responsive">
@@ -177,14 +184,20 @@
                                 <th class="sortable-header" data-sort-key="name" data-column-name="股票名稱">股票名稱</th>
                                 <th class="sortable-header" data-sort-key="shares" data-column-name="股數">股數</th>
                                 <th class="sortable-header" data-sort-key="avg_cost" data-column-name="平均成本">平均成本</th>
-                                <th class="sortable-header" data-sort-key="current_price" data-column-name="目前市價">目前市價</th>
-                                <th class="sortable-header" data-sort-key="previous_close" data-column-name="昨日收盤價">昨日收盤價</th>
-                                <th class="sortable-header" data-sort-key="change_percent" data-column-name="漲幅">漲幅 (%)</th>
-                                <th class="sortable-header" data-sort-key="market_value" data-column-name="市值">市值 (TWD)</th>
+                                <th class="sortable-header" data-sort-key="current_price" data-column-name="目前市價">目前市價
+                                </th>
+                                <th class="sortable-header" data-sort-key="previous_close" data-column-name="昨日收盤價">
+                                    昨日收盤價</th>
+                                <th class="sortable-header" data-sort-key="change_percent" data-column-name="漲幅">漲幅 (%)
+                                </th>
+                                <th class="sortable-header" data-sort-key="market_value" data-column-name="市值">市值 (TWD)
+                                </th>
                                 <th class="sortable-header" data-sort-key="today_pl" data-column-name="今日損益">今日損益</th>
                                 <th class="sortable-header" data-sort-key="pl" data-column-name="累計損益">累計損益</th>
-                                <th class="sortable-header" data-sort-key="pl_percent" data-column-name="報酬率">報酬率 (%)</th>
-                                <th class="sortable-header" data-sort-key="what_if" data-column-name="試算">試算 (What-if)</th>
+                                <th class="sortable-header" data-sort-key="pl_percent" data-column-name="報酬率">報酬率 (%)
+                                </th>
+                                <th class="sortable-header" data-sort-key="what_if" data-column-name="試算">試算 (What-if)
+                                </th>
                                 <th class="sortable-header" data-sort-key="chart" data-column-name="歷史圖表">歷史圖表</th>
                                 <th class="sortable-header" data-sort-key="actions" data-column-name="操作">操作</th>
                             </tr>
@@ -202,7 +215,7 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h4 class="mb-0">總資產歷史 (TWD)</h4>
             <div class="d-flex align-items-center">
@@ -211,7 +224,7 @@
             </div>
         </div>
         <div id="lookup-result" class="alert alert-info" style="display: none;"></div>
-        
+
         <!-- 區間查詢控件 -->
         <div class="card shadow-sm mb-3">
             <div class="card-body">
@@ -233,293 +246,313 @@
                 <div id="range-query-result" class="mt-3" style="display: none;"></div>
             </div>
         </div>
-        
+
         <div class="card shadow-sm mb-4">
             <div class="card-body">
-                <canvas id="history-chart"></canvas>
+                <div id="history-chart" style="height: 400px;"></div>
             </div>
         </div>
-         
+
         <!-- 除錯模式區塊 -->
-<div id="debug-section" class="card shadow-sm mb-3" style="display: none;">
-    <div class="card-body">
-        <h5 class="card-title">除錯功能</h5>
-        
-        <div class="row g-3 mb-3">
-            <div class="col-md-4">
-                <label for="backfill-start-date" class="form-label">回補開始日期</label>
-                <input type="date" class="form-control" id="backfill-start-date">
-            </div>
-            <div class="col-md-4">
-                <label for="backfill-end-date" class="form-label">回補結束日期</label>
-                <input type="date" class="form-control" id="backfill-end-date">
-            </div>
-            <div class="col-md-3 d-flex align-items-end">
-                <button class="btn btn-warning w-100" id="backfill-range-btn">
-                    <i class="bi bi-calendar-plus"></i> 執行範圍回補
-                </button>
-            </div>
-        </div>
-        <div class="row g-3">
-            <div class="col-md-5">
-                <label for="delete-date" class="form-label">選擇日期進行歷史資料刪除</label>
-                <input type="date" class="form-control" id="delete-date">
-            </div>
-            <div class="col-md-2 d-flex align-items-end">
-                <button class="btn btn-danger w-100" id="delete-btn">刪除資料</button>
-            </div>
-        </div>
-        <div id="debug-result" class="mt-3" style="display: none;">
-            <p id="debug-result-message" class="mb-1">正在初始化...</p>
-        </div>
-    </div>
-</div>
+        <div id="debug-section" class="card shadow-sm mb-3" style="display: none;">
+            <div class="card-body">
+                <h5 class="card-title">除錯功能</h5>
 
-<h4 class="mb-3 mt-5">AI 投資助理</h4>
-         <div class="card shadow-sm mb-4" id="ai-chat-section">
-             <div class="card-header bg-light">
-                 <h5 class="mb-0">與 AI 對話</h5>
-             </div>
-             <div class="card-body">
-                 <div id="ai-chat-messages" style="height: 400px; overflow-y: auto; padding: 1rem; margin-bottom: 1rem; border: 1px solid var(--table-border-color); border-radius: var(--border-radius);">
-                     <div class="ai-message">你好！有什麼關於您投資組合的問題嗎？</div>
-                 </div>
-                 
-                 <div class="input-group">
-                     <input type="text" id="ai-chat-input" class="form-control" placeholder="輸入您的問題...">
-                     <button id="ai-chat-send-btn" class="btn btn-primary">
-                         <i class="bi bi-send-fill"></i>
-                     </button>
-                 </div>
-             </div>
-         </div>
-         <div id="debug-console-container" class="card shadow-sm mb-3" style="display: none;">
-             ...
-         </div>
-
-<!-- 除錯訊息控制台 -->
-<div id="debug-console-container" class="card shadow-sm mb-3" style="display: none;">
-    <div class="card-body">
-        <label class="form-label">除錯訊息</label>
-        <div id="debug-console" class="border p-2 bg-dark text-white" style="height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.9em;">
-            <!-- 除錯訊息會顯示在這裡 -->
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <label for="backfill-start-date" class="form-label">回補開始日期</label>
+                        <input type="date" class="form-control" id="backfill-start-date">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="backfill-end-date" class="form-label">回補結束日期</label>
+                        <input type="date" class="form-control" id="backfill-end-date">
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <button class="btn btn-warning w-100" id="backfill-range-btn">
+                            <i class="bi bi-calendar-plus"></i> 執行範圍回補
+                        </button>
+                    </div>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-5">
+                        <label for="delete-date" class="form-label">選擇日期進行歷史資料刪除</label>
+                        <input type="date" class="form-control" id="delete-date">
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <button class="btn btn-danger w-100" id="delete-btn">刪除資料</button>
+                    </div>
+                </div>
+                <div id="debug-result" class="mt-3" style="display: none;">
+                    <p id="debug-result-message" class="mb-1">正在初始化...</p>
+                </div>
+            </div>
         </div>
-    </div>
-</div>
-         
+
+        <h4 class="mb-3 mt-5">AI 投資助理</h4>
+        <div class="card shadow-sm mb-4" id="ai-chat-section">
+            <div class="card-header bg-light">
+                <h5 class="mb-0">與 AI 對話</h5>
+            </div>
+            <div class="card-body">
+                <div id="ai-chat-messages"
+                    style="height: 400px; overflow-y: auto; padding: 1rem; margin-bottom: 1rem; border: 1px solid var(--table-border-color); border-radius: var(--border-radius);">
+                    <div class="ai-message">你好！有什麼關於您投資組合的問題嗎？</div>
+                </div>
+
+                <div class="input-group">
+                    <input type="text" id="ai-chat-input" class="form-control" placeholder="輸入您的問題...">
+                    <button id="ai-chat-send-btn" class="btn btn-primary">
+                        <i class="bi bi-send-fill"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div id="debug-console-container" class="card shadow-sm mb-3" style="display: none;">
+            ...
+        </div>
+
+        <!-- 除錯訊息控制台 -->
+        <div id="debug-console-container" class="card shadow-sm mb-3" style="display: none;">
+            <div class="card-body">
+                <label class="form-label">除錯訊息</label>
+                <div id="debug-console" class="border p-2 bg-dark text-white"
+                    style="height: 200px; overflow-y: auto; font-family: monospace; font-size: 0.9em;">
+                    <!-- 除錯訊息會顯示在這裡 -->
+                </div>
+            </div>
+        </div>
+
         <footer class="text-center mt-4 mb-4">
-             <small id="last-updated" class="text-muted" style="display: none;">尚未更新</small>
+            <small id="last-updated" class="text-muted" style="display: none;">尚未更新</small>
         </footer>
-        
-    </div> <div class="modal fade" id="stock-modal" tabindex="-1" aria-labelledby="stock-modal-label" aria-hidden="true">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title" id="stock-modal-label">新增持股</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <form id="stock-form">
-                <input type="hidden" id="stock-modal-mode" value="add">
-                <div class="mb-3">
-                    <label for="stock-modal-ticker" class="form-label">股票代號 (Ticker)</label>
-                    <input type="text" class="form-control" id="stock-modal-ticker" placeholder="例如: 2317.TW" required>
-                </div>
-                <div class="mb-3">
-                    <label for="stock-modal-name" class="form-label">股票名稱 (Name)</label>
-                    <input type="text" class="form-control" id="stock-modal-name" placeholder="鴻海">
-                    <small class="form-text text-muted">手動輸入以覆蓋。若留空，程式會嘗試自動抓取。</small>
-                </div>
-                <div class="mb-3">
-                    <label for="stock-modal-shares" class="form-label">股數 (Shares)</label>
-                    <input type="number" class="form-control" id="stock-modal-shares" required>
-                </div>
-                <div class="mb-3">
-                    <label for="stock-modal-avg-cost" class="form-label">平均成本 (Avg Cost)</label>
-                    <input type="number" step="0.001" class="form-control" id="stock-modal-avg-cost" required>
-                </div>
-                <div class="mb-3">
-                    <label for="stock-modal-currency" class="form-label">貨幣 (Currency)</label>
-                    <select class="form-select" id="stock-modal-currency" required>
-                        <option value="TWD" selected>TWD (台幣)</option>
-                        <option value="CNY">CNY (人民幣)</option>
-                        <option value="USD">USD (美金)</option>
-                    </select>
-                </div>
-            </form>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-            <button type="button" class="btn btn-primary" id="modal-save-btn">儲存</button>
-          </div>
-        </div>
-      </div>
-          </div>
-          
-          <!-- 設定模態框 -->
-          <div class="modal fade" id="settings-modal" tabindex="-1" aria-labelledby="settings-modal-label" aria-hidden="true">
-            <div class="modal-dialog modal-lg">
-              <div class="modal-content">
+
+    </div>
+    <div class="modal fade" id="stock-modal" tabindex="-1" aria-labelledby="stock-modal-label" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
                 <div class="modal-header">
-                  <h5 class="modal-title" id="settings-modal-label">設定</h5>
-                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <h5 class="modal-title" id="stock-modal-label">新增持股</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                  <form id="settings-form">
-                    <div class="mb-4">
-                      <h6 class="mb-3">顯示設定</h6>
-                      
-                      <!-- 更新頻率設定 -->
-                      <div class="mb-3">
-                        <label class="form-label">資料更新頻率</label>
-                        <select class="form-select" id="update-interval">
-                          <option value="1000">每秒更新</option>
-                          <option value="5000" selected>每5秒更新</option>
-                          <option value="10000">每10秒更新</option>
-                          <option value="30000">每30秒更新</option>
-                          <option value="60000">每分鐘更新</option>
-                          <option value="0">手動更新</option>
-                        </select>
-                        <small class="form-text text-muted">設定資料自動更新的頻率</small>
-                      </div>
-                      
-                      <!-- 圖表時間範圍 -->
-                      <div class="mb-3">
-                        <label class="form-label">圖表顯示範圍</label>
-                        <select class="form-select" id="chart-time-range">
-                          <option value="3">近3天</option>
-                          <option value="7">近7天</option>
-                          <option value="30">近30天</option>
-                          <option value="60">近60天</option>
-                          <option value="90" selected>近90天</option>
-                          <option value="365">近一年</option>
-                          <option value="730">近兩年</option>
-                          <option value="1095">近三年</option>
-                        </select>
-                        <small class="form-text text-muted">設定歷史圖表顯示的時間範圍</small>
-                      </div>
-                      
-                      <!-- 默認圖表系列 -->
-                      <div class="mb-3">
-                        <label class="form-label">圖表顯示系列</label>
-                        <div class="form-check">
-                          <input class="form-check-input" type="checkbox" id="show-total-series" checked>
-                          <label class="form-check-label" for="show-total-series">總資產</label>
+                    <form id="stock-form">
+                        <input type="hidden" id="stock-modal-mode" value="add">
+                        <div class="mb-3">
+                            <label for="stock-modal-ticker" class="form-label">股票代號 (Ticker)</label>
+                            <input type="text" class="form-control" id="stock-modal-ticker" placeholder="例如: 2317.TW"
+                                required>
                         </div>
-                        <div class="form-check">
-                          <input class="form-check-input" type="checkbox" id="show-tw-series" checked>
-                          <label class="form-check-label" for="show-tw-series">台灣股票</label>
+                        <div class="mb-3">
+                            <label for="stock-modal-name" class="form-label">股票名稱 (Name)</label>
+                            <input type="text" class="form-control" id="stock-modal-name" placeholder="鴻海">
+                            <small class="form-text text-muted">手動輸入以覆蓋。若留空，程式會嘗試自動抓取。</small>
                         </div>
-                        <div class="form-check">
-                          <input class="form-check-input" type="checkbox" id="show-cn-series" checked>
-                          <label class="form-check-label" for="show-cn-series">中國股票</label>
+                        <div class="mb-3">
+                            <label for="stock-modal-shares" class="form-label">股數 (Shares)</label>
+                            <input type="number" class="form-control" id="stock-modal-shares" required>
                         </div>
-                      </div>
-                    </div>
-                    
-                    <div class="mb-4">
-                      <h6 class="mb-3">外觀設定</h6>
-                      
-                      <!-- 主題設定 -->
-                      <div class="mb-3">
-                        <label class="form-label">主題</label>
-                        <select class="form-select" id="theme-selector">
-                          <option value="light" selected>淺色主題</option>
-                          <option value="dark">深色主題</option>
-                        </select>
-                      </div>
-                    </div>
-                    
-                    <div class="mb-4">
-                      <h6 class="mb-3">通知設定</h6>
-                      
-                      <!-- 通知設定 -->
-                      <div class="form-check form-switch mb-2">
-                        <input class="form-check-input" type="checkbox" id="enable-notifications">
-                        <label class="form-check-label" for="enable-notifications">啟用通知</label>
-                      </div>
-                      
-                      <!-- 總市值通知設定 -->
-                      <div class="form-check form-switch mb-2">
-                        <input class="form-check-input" type="checkbox" id="enable-market-value-notification">
-                        <label class="form-check-label" for="enable-market-value-notification">啟用總市值閃爍通知</label>
-                      </div>
-                      <div class="mb-3">
-                        <label for="market-value-notification-threshold" class="form-label">總市值提醒閾值 (TWD)</label>
-                        <input type="number" class="form-control" id="market-value-notification-threshold" step="1000" value="1000000">
-                        <small class="form-text text-muted">當總市值超過此金額時顯示閃爍通知</small>
-                      </div>
-                      
-                      <!-- 台灣股票總市值通知設定 -->
-                      <div class="form-check form-switch mb-2">
-                        <input class="form-check-input" type="checkbox" id="enable-tw-market-value-notification">
-                        <label class="form-check-label" for="enable-tw-market-value-notification">啟用台灣股票總市值閃爍通知</label>
-                      </div>
-                      <div class="mb-3">
-                        <label for="tw-market-value-notification-threshold" class="form-label">台灣股票總市值提醒閾值 (TWD)</label>
-                        <input type="number" class="form-control" id="tw-market-value-notification-threshold" step="1000" value="500000">
-                        <small class="form-text text-muted">當台灣股票總市值超過此金額時顯示閃爍通知</small>
-                      </div>
-                      
-                      <!-- 中國股票總市值通知設定 -->
-                      <div class="form-check form-switch mb-2">
-                        <input class="form-check-input" type="checkbox" id="enable-cn-market-value-notification">
-                        <label class="form-check-label" for="enable-cn-market-value-notification">啟用中國股票總市值閃爍通知</label>
-                      </div>
-                      <div class="mb-3">
-                        <label for="cn-market-value-notification-threshold" class="form-label">中國股票總市值提醒閾值 (TWD)</label>
-                        <input type="number" class="form-control" id="cn-market-value-notification-threshold" step="1000" value="500000">
-                        <small class="form-text text-muted">當中國股票總市值超過此金額時顯示閃爍通知</small>
-                      </div>
-                      
-                      <!-- 總報酬率通知設定 -->
-                      <div class="form-check form-switch mb-2">
-                        <input class="form-check-input" type="checkbox" id="enable-pl-percent-notification">
-                        <label class="form-check-label" for="enable-pl-percent-notification">啟用總報酬率閃爍通知</label>
-                      </div>
-                      <div class="mb-3">
-                        <label for="pl-percent-notification-threshold" class="form-label">總報酬率提醒閾值 (%)</label>
-                        <input type="number" class="form-control" id="pl-percent-notification-threshold" step="0.1" value="1.0">
-                        <small class="form-text text-muted">當總報酬率超過此百分比時顯示閃爍通知</small>
-                      </div>
-                      
-                      <!-- 總損益通知設定 -->
-                      <div class="form-check form-switch mb-2">
-                        <input class="form-check-input" type="checkbox" id="enable-pl-notification">
-                        <label class="form-check-label" for="enable-pl-notification">啟用總損益閃爍通知</label>
-                      </div>
-                      <div class="mb-3">
-                       <label for="pl-notification-threshold" class="form-label">總損益提醒閾值 (TWD)</label>
-                       <input type="number" class="form-control" id="pl-notification-threshold" step="100" value="1000">
-                       <small class="form-text text-muted">當總損益超過此金額時顯示閃爍通知</small>
-                     </div>
-                   </div>
-                   
-                   <div class="mb-4">
-                     <h6 class="mb-3">除錯設定</h6>
-                     
-                     <!-- 除錯模式開關 -->
-                     <div class="form-check form-switch mb-2">
-                       <input class="form-check-input" type="checkbox" id="debug-mode">
-                       <label class="form-check-label" for="debug-mode">啟用除錯模式</label>
-                     </div>
-                   </div>
-                 </form>
+                        <div class="mb-3">
+                            <label for="stock-modal-avg-cost" class="form-label">平均成本 (Avg Cost)</label>
+                            <input type="number" step="0.001" class="form-control" id="stock-modal-avg-cost" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="stock-modal-currency" class="form-label">貨幣 (Currency)</label>
+                            <select class="form-select" id="stock-modal-currency" required>
+                                <option value="TWD" selected>TWD (台幣)</option>
+                                <option value="CNY">CNY (人民幣)</option>
+                                <option value="USD">USD (美金)</option>
+                            </select>
+                        </div>
+                    </form>
                 </div>
                 <div class="modal-footer">
-                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                  <button type="button" class="btn btn-primary" id="save-settings-btn">儲存設定</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="modal-save-btn">儲存</button>
                 </div>
-              </div>
             </div>
-          </div>
-          
-          <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-          <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-          <script src="https://cdn.jsdelivr.net/npm/countup.js@2.0.7/dist/countUp.umd.js"></script>
-          <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-          <script src="https://cdn.jsdelivr.net/npm/dompurify@3.3.0/dist/purify.min.js"></script>
-          <script src="{{ url_for('static', filename='app.js') }}"></script>
-          
-      </body>
-      </html>
+        </div>
+    </div>
+
+    <!-- 設定模態框 -->
+    <div class="modal fade" id="settings-modal" tabindex="-1" aria-labelledby="settings-modal-label" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="settings-modal-label">設定</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="settings-form">
+                        <div class="mb-4">
+                            <h6 class="mb-3">顯示設定</h6>
+
+                            <!-- 更新頻率設定 -->
+                            <div class="mb-3">
+                                <label class="form-label">資料更新頻率</label>
+                                <select class="form-select" id="update-interval">
+                                    <option value="1000">每秒更新</option>
+                                    <option value="5000" selected>每5秒更新</option>
+                                    <option value="10000">每10秒更新</option>
+                                    <option value="30000">每30秒更新</option>
+                                    <option value="60000">每分鐘更新</option>
+                                    <option value="0">手動更新</option>
+                                </select>
+                                <small class="form-text text-muted">設定資料自動更新的頻率</small>
+                            </div>
+
+                            <!-- 圖表時間範圍 -->
+                            <div class="mb-3">
+                                <label class="form-label">圖表顯示範圍</label>
+                                <select class="form-select" id="chart-time-range">
+                                    <option value="3">近3天</option>
+                                    <option value="7">近7天</option>
+                                    <option value="30">近30天</option>
+                                    <option value="60">近60天</option>
+                                    <option value="90" selected>近90天</option>
+                                    <option value="365">近一年</option>
+                                    <option value="730">近兩年</option>
+                                    <option value="1095">近三年</option>
+                                </select>
+                                <small class="form-text text-muted">設定歷史圖表顯示的時間範圍</small>
+                            </div>
+
+                            <!-- 默認圖表系列 -->
+                            <div class="mb-3">
+                                <label class="form-label">圖表顯示系列</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="show-total-series" checked>
+                                    <label class="form-check-label" for="show-total-series">總資產</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="show-tw-series" checked>
+                                    <label class="form-check-label" for="show-tw-series">台灣股票</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="show-cn-series" checked>
+                                    <label class="form-check-label" for="show-cn-series">中國股票</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <h6 class="mb-3">外觀設定</h6>
+
+                            <!-- 主題設定 -->
+                            <div class="mb-3">
+                                <label class="form-label">主題</label>
+                                <select class="form-select" id="theme-selector">
+                                    <option value="light" selected>淺色主題</option>
+                                    <option value="dark">深色主題</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <h6 class="mb-3">通知設定</h6>
+
+                            <!-- 通知設定 -->
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="enable-notifications">
+                                <label class="form-check-label" for="enable-notifications">啟用通知</label>
+                            </div>
+
+                            <!-- 總市值通知設定 -->
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="enable-market-value-notification">
+                                <label class="form-check-label" for="enable-market-value-notification">啟用總市值閃爍通知</label>
+                            </div>
+                            <div class="mb-3">
+                                <label for="market-value-notification-threshold" class="form-label">總市值提醒閾值
+                                    (TWD)</label>
+                                <input type="number" class="form-control" id="market-value-notification-threshold"
+                                    step="1000" value="1000000">
+                                <small class="form-text text-muted">當總市值超過此金額時顯示閃爍通知</small>
+                            </div>
+
+                            <!-- 台灣股票總市值通知設定 -->
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox"
+                                    id="enable-tw-market-value-notification">
+                                <label class="form-check-label"
+                                    for="enable-tw-market-value-notification">啟用台灣股票總市值閃爍通知</label>
+                            </div>
+                            <div class="mb-3">
+                                <label for="tw-market-value-notification-threshold" class="form-label">台灣股票總市值提醒閾值
+                                    (TWD)</label>
+                                <input type="number" class="form-control" id="tw-market-value-notification-threshold"
+                                    step="1000" value="500000">
+                                <small class="form-text text-muted">當台灣股票總市值超過此金額時顯示閃爍通知</small>
+                            </div>
+
+                            <!-- 中國股票總市值通知設定 -->
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox"
+                                    id="enable-cn-market-value-notification">
+                                <label class="form-check-label"
+                                    for="enable-cn-market-value-notification">啟用中國股票總市值閃爍通知</label>
+                            </div>
+                            <div class="mb-3">
+                                <label for="cn-market-value-notification-threshold" class="form-label">中國股票總市值提醒閾值
+                                    (TWD)</label>
+                                <input type="number" class="form-control" id="cn-market-value-notification-threshold"
+                                    step="1000" value="500000">
+                                <small class="form-text text-muted">當中國股票總市值超過此金額時顯示閃爍通知</small>
+                            </div>
+
+                            <!-- 總報酬率通知設定 -->
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="enable-pl-percent-notification">
+                                <label class="form-check-label" for="enable-pl-percent-notification">啟用總報酬率閃爍通知</label>
+                            </div>
+                            <div class="mb-3">
+                                <label for="pl-percent-notification-threshold" class="form-label">總報酬率提醒閾值 (%)</label>
+                                <input type="number" class="form-control" id="pl-percent-notification-threshold"
+                                    step="0.1" value="1.0">
+                                <small class="form-text text-muted">當總報酬率超過此百分比時顯示閃爍通知</small>
+                            </div>
+
+                            <!-- 總損益通知設定 -->
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="enable-pl-notification">
+                                <label class="form-check-label" for="enable-pl-notification">啟用總損益閃爍通知</label>
+                            </div>
+                            <div class="mb-3">
+                                <label for="pl-notification-threshold" class="form-label">總損益提醒閾值 (TWD)</label>
+                                <input type="number" class="form-control" id="pl-notification-threshold" step="100"
+                                    value="1000">
+                                <small class="form-text text-muted">當總損益超過此金額時顯示閃爍通知</small>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <h6 class="mb-3">除錯設定</h6>
+
+                            <!-- 除錯模式開關 -->
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="debug-mode">
+                                <label class="form-check-label" for="debug-mode">啟用除錯模式</label>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" id="save-settings-btn">儲存設定</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.highcharts.com/highcharts.js"></script>
+    <script src="https://code.highcharts.com/modules/exporting.js"></script>
+    <script src="https://code.highcharts.com/modules/export-data.js"></script>
+    <script src="https://code.highcharts.com/modules/accessibility.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/countup.js@2.0.7/dist/countUp.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.3.0/dist/purify.min.js"></script>
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+
+</body>
+
+</html>
