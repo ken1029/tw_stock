@@ -249,6 +249,18 @@
 
         <div class="card shadow-sm mb-4">
             <div class="card-body">
+                <div class="d-flex justify-content-end mb-2">
+                    <div class="btn-group btn-group-sm" role="group" id="chart-range-selector">
+                        <button type="button" class="btn btn-outline-secondary" data-range="3">3天</button>
+                        <button type="button" class="btn btn-outline-secondary" data-range="7">7天</button>
+                        <button type="button" class="btn btn-outline-secondary" data-range="14">14天</button>
+                        <button type="button" class="btn btn-outline-secondary" data-range="30">1個月</button>
+                        <button type="button" class="btn btn-outline-secondary" data-range="90">3個月</button>
+                        <button type="button" class="btn btn-outline-secondary" data-range="180">6個月</button>
+                        <button type="button" class="btn btn-outline-secondary" data-range="365">1年</button>
+                        <button type="button" class="btn btn-outline-secondary" data-range="0">全部</button>
+                    </div>
+                </div>
                 <div id="history-chart" style="height: 400px;"></div>
             </div>
         </div>

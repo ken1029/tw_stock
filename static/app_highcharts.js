@@ -939,6 +939,9 @@ function renderHistoryChart(dailyData) {
     // 獲取設定
     const settings = loadSettings();
 
+    // 更新按鈕狀態
+    updateChartRangeButtons(settings.chartTimeRange);
+
     // 處理圖表時間範圍
     const sortedDates = Object.keys(dailyData).sort();
     let filteredDates = sortedDates;
@@ -1653,6 +1656,34 @@ function findFirstDateOfPeriodWithValue(prefix, sortedDates, getValueFunction) {
     const data = historicalDailyData[date];
     return date ? { date: date, value: getValueFunction(data) } : { date: null, value: 0 };
 }
+
+function handleChartRangeClick(event) {
+    const button = event.target;
+    const range = parseInt(button.dataset.range);
+
+    // Update settings
+    const settings = loadSettings();
+    settings.chartTimeRange = range;
+    saveSettings(settings);
+
+    // Re-render chart
+    if (historicalDailyData && Object.keys(historicalDailyData).length > 0) {
+        renderHistoryChart(historicalDailyData);
+    }
+}
+
+function updateChartRangeButtons(range) {
+    document.querySelectorAll('#chart-range-selector button').forEach(btn => {
+        if (parseInt(btn.dataset.range) === range) {
+            btn.classList.remove('btn-outline-secondary');
+            btn.classList.add('btn-secondary');
+        } else {
+            btn.classList.add('btn-outline-secondary');
+            btn.classList.remove('btn-secondary');
+        }
+    });
+}
+
 function handleRangeClick(event) {
     const button = event.target;
     currentRange = button.dataset.range;
@@ -1890,6 +1921,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.querySelectorAll('#performance-type-selector button').forEach(btn => {
         btn.addEventListener('click', handlePerformanceTypeClick);
+    });
+    document.querySelectorAll('#chart-range-selector button').forEach(btn => {
+        btn.addEventListener('click', handleChartRangeClick);
     });
 
     // 添加清除日期範圍按鈕事件監聽器
