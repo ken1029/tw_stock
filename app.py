@@ -1,6 +1,6 @@
 import json
 import yfinance as yf
-from flask import Flask, render_template, jsonify, request, current_app
+from flask import Flask, render_template, jsonify, request, current_app, session, redirect, url_for
 from datetime import datetime, date, timedelta, time
 import os
 import requests
@@ -54,6 +54,8 @@ debug_handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s: %(mes
 logger.addHandler(debug_handler)
 
 app = Flask(__name__)
+app.secret_key = 'super_secret_tech_key' # Replace with a strong random key in production
+app.permanent_session_lifetime = timedelta(days=7)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # 使用配置中的文件路徑，如果沒有則使用默認路徑
@@ -747,7 +749,28 @@ def save_daily_snapshot():
 
 @app.route('/')
 def index():
+    if 'user' not in session:
+        return redirect(url_for('login'))
     return render_template('index.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        # Hardcoded credentials for demonstration
+        if username == 'admin' and password == 'rootisme':
+            session.permanent = True
+            session['user'] = username
+            return redirect(url_for('index'))
+        else:
+            return render_template('login.html', error="Access Denied: Invalid Credentials")
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('user', None)
+    return redirect(url_for('login'))
 
 @app.route('/api/ask_ai', methods=['POST'])
 def ask_ai():
