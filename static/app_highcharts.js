@@ -1519,19 +1519,24 @@ async function showHistoricalData(event) {
 // (highlightChartPoint 不變)
 function highlightChartPoint(dateStr) {
     if (!historyChart) return;
-    const dataIndex = historyChart.data.labels.indexOf(dateStr);
-    if (dataIndex === -1) {
-        historyChart.tooltip.setActiveElements([], { x: 0, y: 0 });
-        historyChart.update();
-        return;
+
+    // Convert YYYY-MM-DD to timestamp (UTC midnight) to match render logic
+    const targetTime = new Date(dateStr).getTime();
+
+    // Find the point in the first series (Total Assets)
+    const series = historyChart.series[0];
+    if (!series) return;
+
+    // Find point with matching x value
+    const point = series.points.find(p => p.x === targetTime);
+
+    if (point) {
+        // Show tooltip
+        historyChart.tooltip.refresh([point]); // Array for shared tooltip
+        point.setState('hover');
+    } else {
+        historyChart.tooltip.hide(0);
     }
-    historyChart.tooltip.setActiveElements([
-        { datasetIndex: 0, index: dataIndex }
-    ]);
-    historyChart.setActiveElements([
-        { datasetIndex: 0, index: dataIndex }
-    ]);
-    historyChart.update();
 }
 
 // (排序輔助函式 ... 保持不變)
@@ -2214,9 +2219,11 @@ function clearDateRange() {
     document.getElementById('range-query-result').style.display = 'none';
     // 清除圖表上的高亮
     if (historyChart) {
-        historyChart.tooltip.setActiveElements([], { x: 0, y: 0 });
-        historyChart.setActiveElements([]);
-        historyChart.update();
+        historyChart.tooltip.hide(0);
+        // Clear point selection if any
+        if (historyChart.getSelectedPoints) {
+            historyChart.getSelectedPoints().forEach(p => p.select(false));
+        }
     }
 }
 
@@ -2224,25 +2231,8 @@ function clearDateRange() {
 function highlightChartRange(startDateStr, endDateStr) {
     if (!historyChart) return;
 
-    // 找到開始和結束日期的索引
-    const labels = historyChart.data.labels;
-    const startIndex = labels.indexOf(startDateStr);
-    const endIndex = labels.indexOf(endDateStr);
-
-    // 如果找不到日期，清除高亮
-    if (startIndex === -1 || endIndex === -1) {
-        historyChart.tooltip.setActiveElements([], { x: 0, y: 0 });
-        historyChart.update();
-        return;
-    }
-
-    // 設置工具提示高亮顯示結束日期點
-    historyChart.tooltip.setActiveElements([
-        { datasetIndex: 0, index: endIndex }
-    ]);
-
-    // 更新圖表
-    historyChart.update();
+    // We only highlight the end date point as per original logic
+    highlightChartPoint(endDateStr);
 }
 
 // --- 設定功能 ---
